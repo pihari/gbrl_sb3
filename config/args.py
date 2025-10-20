@@ -587,7 +587,7 @@ def process_logging(args, callback_list):
 
 def process_policy_kwargs(args):
     algo_kwargs = {}
-    if args.algo_type == 'ppo_gbrl':
+    if args.algo_type == 'ppo_gbrl' or args.algo_type == "sppo_gbrl":
         algo_kwargs = {
             "clip_range": args.clip_range,
             "clip_range_vf": args.clip_range_vf,
