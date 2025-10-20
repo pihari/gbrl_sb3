@@ -155,7 +155,7 @@ def parse_args():
     parser.add_argument('--env_type', type=str, choices=['atari', 'minigrid', 'gym', 'mujoco',
                                                          'football', 'equation'])
     parser.add_argument('--algo_type', type=str, choices=['ppo_nn', 'ppo_gbrl', 'a2c_gbrl', 'sac_gbrl',
-                                                          'awr_gbrl', 'dqn_gbrl', 'a2c_nn', 'awr_nn', 'dqn_nn'])
+                                                          'awr_gbrl', 'dqn_gbrl', 'a2c_nn', 'awr_nn', 'dqn_nn', 'sppo_gbrl'])
     parser.add_argument('--env_name', type=str)
     # env args
     parser.add_argument('--seed', type=int)
@@ -587,7 +587,70 @@ def process_logging(args, callback_list):
 
 def process_policy_kwargs(args):
     algo_kwargs = {}
-    if args.algo_type == 'ppo_gbrl' or args.algo_type == "sppo_gbrl":
+    if args.algo_type == 'ppo_gbrl':
+        algo_kwargs = {
+            "clip_range": args.clip_range,
+            "clip_range_vf": args.clip_range_vf,
+            "normalize_advantage": args.normalize_advantage,
+            "target_kl": args.target_kl,
+            "n_epochs": args.n_epochs,
+            "max_policy_grad_norm": args.max_policy_grad_norm,
+            "max_value_grad_norm": args.max_value_grad_norm,
+            "ent_coef": args.ent_coef,
+            "vf_coef": args.vf_coef,
+            "n_steps": args.n_steps,
+            "batch_size": args.batch_size,
+            "gae_lambda": args.gae_lambda,
+            "gamma": args.gamma,
+            "total_n_steps": args.total_n_steps,
+            "policy_kwargs": args.policy_kwargs if args.policy_kwargs is not None else {
+                "log_std_init": args.log_std_init,
+                "squash": args.squash,
+                "nn_critic": args.nn_critic,
+                "shared_tree_struct": args.shared_tree_struct,
+                "tree_struct": {
+                    "max_depth": args.max_depth,
+                    "n_bins": args.n_bins,
+                    "min_data_in_leaf": args.min_data_in_leaf,
+                    "par_th": args.par_th,
+                    "grow_policy": args.grow_policy,
+                },
+                "tree_optimizer": {
+                    "params": {
+                        "split_score_func": args.split_score_func,
+                        'control_variates': args.control_variates,
+                        "generator_type": args.generator_type,
+                        "feature_weights": args.feature_weights,
+                    },
+                    "policy_optimizer": {
+                        "policy_algo": args.policy_algo,
+                        "policy_lr": args.policy_lr,
+                        # Adam optimizer
+                        "policy_beta_1": args.policy_beta_1,
+                        "policy_beta_2": args.policy_beta_2,
+                        "policy_eps": args.policy_eps,
+                        "policy_shrinkage": args.policy_shrinkage,
+                    },
+                    "value_optimizer": {
+                        "value_algo": args.value_algo,
+                        "value_lr": args.value_lr,
+                        "value_beta_1": args.value_beta_1,
+                        "value_beta_2": args.value_beta_2,
+                        "value_eps": args.value_eps,
+                        "value_shrinkage": args.value_shrinkage,
+                    },
+                },
+            },
+            "fixed_std": args.fixed_std,
+            "log_std_lr": args.log_std_lr,
+            "learning_rate": args.learning_rate,
+            "min_log_std_lr": args.min_log_std_lr,
+            "policy_bound_loss_weight": args.policy_bound_loss_weight,
+            "device": args.device,
+            "seed": args.seed,
+            "verbose": args.verbose,
+        }
+    elif args.algo_type == 'sppo_gbrl': # currently a copy of ppo_gbrl
         algo_kwargs = {
             "clip_range": args.clip_range,
             "clip_range_vf": args.clip_range_vf,
