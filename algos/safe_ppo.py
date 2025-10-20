@@ -1,4 +1,4 @@
-from ppo import PPO_GBRL
+from algos.ppo import PPO_GBRL
 import torch as th
 
 class SafePPO_GBRL(PPO_GBRL):
