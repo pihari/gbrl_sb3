@@ -5,7 +5,7 @@ import torch as th
 import torch.nn.functional as F
 from gymnasium import spaces
 
-from ppo import PPO_GBRL
+from algos.ppo import PPO_GBRL
 
 try:
     from stable_baselines3.common.distributions import DiagGaussianDistribution
