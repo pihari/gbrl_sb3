@@ -111,7 +111,7 @@ class SafePPO_GBRL(OnPolicyAlgorithm):
         max_value_grad_norm: Optional[float] = None,
         # Safety:
         cost_threshold: float = 0.0,
-        # expected interfaces: rollout_data.cost_advantages (Tensor), or set current_cost_estimate externally
+        normalize_advantage: bool = True,
     ):
         super().__init__(
             policy,
@@ -151,6 +151,7 @@ class SafePPO_GBRL(OnPolicyAlgorithm):
         # safety
         self.cost_threshold = float(cost_threshold)
         self.current_cost_estimate = 0.0
+        self.normalize_advantage = normalize_advantage
 
         # logging helpers
         self.rollout_cntr = 0
