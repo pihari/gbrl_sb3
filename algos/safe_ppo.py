@@ -4,6 +4,8 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 from gymnasium import spaces
+from stable_baselines3.common.buffers import RolloutBuffer
+from stable_baselines3.common.vec_env import VecEnv
 
 from algos.ppo import PPO_GBRL
 
@@ -172,11 +174,9 @@ class SafePPO_GBRL(PPO_GBRL):
                             b_parts.append(th.zeros_like(p).view(-1) if cg is None else cg.view(-1))
                         b = th.cat(b_parts) if len(b_parts) > 0 else th.zeros_like(g)
 
-                        # pick an expected-cost scalar
                         if callable(self.cost_value_source):
                             c_val = float(self.cost_value_source())
                         else:
-                            # fallback: use your running estimate if present, else batch mean of A_cost
                             c_val = float(getattr(self, "current_cost_estimate", float(A_cost.mean().item())))
 
                         g_safe = _a_projection(g, b, c_val, self.cost_threshold)
@@ -299,6 +299,73 @@ class SafePPO_GBRL(PPO_GBRL):
         self.logger.record("train/clip_range", clip_range)
         if self.clip_range_vf is not None:
             self.logger.record("train/clip_range_vf", clip_range_vf)
+
+
+    def collect_rollouts(self,
+                         env: VecEnv,
+                         callback,
+                         rollout_buffer: RolloutBuffer,
+                         n_rollout_steps: int) -> bool:
+        """
+        Collect experiences from the environment and store them in the buffer.
+        Overridden to extract 'cost' from info dict.
+        """
+        assert self._last_obs is not None, "No previous observation was provided"
+        rollout_buffer.reset()
+        episode_costs = np.zeros(env.num_envs)
+        episode_rewards = np.zeros(env.num_envs)
+
+        n_steps = 0
+        callback.on_rollout_start()
+
+        while n_steps < n_rollout_steps:
+            with th.no_grad():
+                actions, values, log_probs = self.policy.forward(self._last_obs, deterministic=False)
+
+            new_obs, rewards, dones, infos = env.step(actions.cpu().numpy())
+
+            self.num_timesteps += env.num_envs
+
+            # Collect per-step cost from info
+            costs = np.array([info.get("cost", 0.0) for info in infos])
+            episode_costs += costs
+            episode_rewards += rewards
+
+            # Logging cost and reward per step
+            for idx, info in enumerate(infos):
+                info["episode_cost"] = episode_costs[idx]
+                info["episode_reward"] = episode_rewards[idx]
+
+            # Store data in the buffer
+            rollout_buffer.add(self._last_obs, actions, rewards, self._last_episode_starts,
+                               values, log_probs)
+
+            self._last_obs = new_obs
+            self._last_episode_starts = dones
+
+            n_steps += 1
+
+            # Handle episode ends, safety specific data
+            for idx, done in enumerate(dones):
+                if done:
+                    self.logger.record("rollout/ep_cost", episode_costs[idx])
+                    self.logger.record("rollout/ep_rew", episode_rewards[idx])
+                    self.logger.record("rollout/constraint_satisfied", int(episode_costs[idx] <= self.cost_threshold))
+                    self.logger.record("rollout/constraint_violation", int(episode_costs[idx] > self.cost_threshold))
+                    episode_costs[idx] = 0.0
+                    episode_rewards[idx] = 0.0
+
+            if not callback.on_step():
+                return False
+
+        with th.no_grad():
+            values = self.policy.predict_values(self._last_obs)
+
+        rollout_buffer.compute_returns_and_advantage(last_values=values,
+                                                     dones=self._last_episode_starts)
+
+        callback.on_rollout_end()
+        return True
 
 
 """

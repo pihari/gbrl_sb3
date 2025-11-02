@@ -11,6 +11,8 @@ import sys
 import warnings
 from pathlib import Path
 
+import safety_gymnasium
+
 ROOT_PATH = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT_PATH))
 
@@ -102,7 +104,7 @@ if __name__ == '__main__':
         env = make_vec_env(FootballGymSB3, n_envs=args.num_envs, seed=args.seed, env_kwargs=args.env_kwargs)
         if args.evaluate:
             eval_env = make_vec_env(FootballGymSB3, n_envs=1, env_kwargs=args.env_kwargs)
-    elif args.env_type == 'mujoco' or args.env_type == 'gym':
+    elif args.env_type == 'mujoco' or args.env_type == 'gym' or args.env_type == 'safety-gym':
         env = make_vec_env(args.env_name, n_envs=args.num_envs, seed=args.seed, env_kwargs=args.env_kwargs)
         if args.evaluate:
             eval_env = make_vec_env(args.env_name, n_envs=1, env_kwargs=args.env_kwargs)

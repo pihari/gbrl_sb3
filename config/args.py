@@ -153,7 +153,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # mandatory arguments
     parser.add_argument('--env_type', type=str, choices=['atari', 'minigrid', 'gym', 'mujoco',
-                                                         'football', 'equation'])
+                                                         'football', 'equation', 'safety-gym'])
     parser.add_argument('--algo_type', type=str, choices=['ppo_nn', 'ppo_gbrl', 'a2c_gbrl', 'sac_gbrl',
                                                           'awr_gbrl', 'dqn_gbrl', 'a2c_nn', 'awr_nn', 'dqn_nn', 'sppo_gbrl'])
     parser.add_argument('--env_name', type=str)
