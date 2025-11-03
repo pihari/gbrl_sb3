@@ -337,7 +337,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 info["episode_reward"] = episode_rewards[idx]
 
             # Store data in the buffer
-            rollout_buffer.add(self._last_obs, actions, rewards, self._last_episode_starts,
+            rollout_buffer.add(self._last_obs, actions.detach().cpu().numpy(), rewards, self._last_episode_starts,
                                values, log_probs)
 
             self._last_obs = new_obs
