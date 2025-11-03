@@ -346,14 +346,26 @@ class SafePPO_GBRL(PPO_GBRL):
             n_steps += 1
 
             # Handle episode ends, safety specific data
+            completed_costs = []
+            completed_rewards = []
+            violations = 0
+
             for idx, done in enumerate(dones):
                 if done:
-                    self.logger.record("rollout/ep_cost", episode_costs[idx])
-                    self.logger.record("rollout/ep_rew", episode_rewards[idx])
-                    self.logger.record("rollout/constraint_satisfied", int(episode_costs[idx] <= self.cost_threshold))
-                    self.logger.record("rollout/constraint_violation", int(episode_costs[idx] > self.cost_threshold))
+                    cost = episode_costs[idx]
+                    reward = episode_rewards[idx]
+                    completed_costs.append(cost)
+                    completed_rewards.append(reward)
+                    if cost > self.cost_threshold:
+                        violations += 1
                     episode_costs[idx] = 0.0
                     episode_rewards[idx] = 0.0
+
+            if completed_costs:
+                self.logger.record("rollout/ep_cost_mean", np.mean(completed_costs))
+                self.logger.record("rollout/ep_rew_mean", np.mean(completed_rewards))
+                self.logger.record("rollout/constraint_violation_count", violations)
+                self.logger.record("rollout/constraint_violation_rate", violations / len(completed_costs))
 
             if not callback.on_step():
                 return False
