@@ -361,7 +361,7 @@ class SafePPO_GBRL(PPO_GBRL):
         with th.no_grad():
             values = self.policy.predict_values(self._last_obs)
 
-        rollout_buffer.compute_returns_and_advantage(last_values=values,
+        rollout_buffer.compute_returns_and_advantage(last_values=values.detach(),
                                                      dones=self._last_episode_starts)
 
         callback.on_rollout_end()
