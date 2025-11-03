@@ -109,6 +109,7 @@ class SafePPO_GBRL(PPO_GBRL):
         values_maxs, values_mins = [], []
         values_grad_maxs, values_grad_mins = [], []
         log_std_s = []
+        all_cost_advantages = []
 
         continue_training = True
 
@@ -240,6 +241,11 @@ class SafePPO_GBRL(PPO_GBRL):
                 self._n_updates += 1
                 clip_fraction = th.mean((th.abs(ratio - 1) > clip_range).float()).item()
                 clip_fractions.append(clip_fraction)
+
+                all_cost_advantages.append(rollout_data.cost_advantages)
+
+            with th.no_grad():
+                self.current_cost_estimate = th.cat(all_cost_advantages).mean().item()
 
             if not continue_training:
                 break
