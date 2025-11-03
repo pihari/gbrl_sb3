@@ -4,7 +4,7 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 from gymnasium import spaces
-from stable_baselines3.common.buffers import RolloutBuffer
+from stable_baselines3.common.buffers import RolloutBuffer, RolloutBufferSamples
 from stable_baselines3.common.vec_env import VecEnv
 
 from algos.ppo import PPO_GBRL
@@ -75,6 +75,23 @@ class SafeRolloutBuffer(RolloutBuffer):
         self.costs.append(cost)
         self.cost_values.append(cost_value)
 
+    def get(self, batch_size=None):
+        # Call the base class method to get the standard samples
+        generator = super().get(batch_size=batch_size)
+
+        for sample in generator:
+            # Adds cost_advantages to the returned sample
+            extended_sample = RolloutBufferSamples(
+                observations=sample.observations,
+                actions=sample.actions,
+                values=sample.values,
+                log_probs=sample.log_probs,
+                advantages=sample.advantages,
+                returns=sample.returns,
+                cost_advantages=self.cost_advantages[sample.indices] if hasattr(sample,"indices") else self.cost_advantages
+            )
+            yield extended_sample
+
     def compute_returns_and_advantage(self, last_values, dones):
         super().compute_returns_and_advantage(last_values, dones)
 
@@ -85,6 +102,7 @@ class SafeRolloutBuffer(RolloutBuffer):
         last_cost_value = cost_values_tensor[-1]
         self.cost_advantages = cost_tensor - cost_values_tensor # simple version, possibly use GAE
         self.cost_returns = self.cost_advantages + cost_values_tensor
+
 
 class SafePPO_GBRL(PPO_GBRL):
     """
