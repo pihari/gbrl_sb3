@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from gymnasium import spaces
 from stable_baselines3.common.buffers import RolloutBuffer, RolloutBufferSamples
 from stable_baselines3.common.vec_env import VecEnv
+from typing import NamedTuple
 
 from algos.ppo import PPO_GBRL
 
@@ -56,6 +57,14 @@ def _a_projection(policy_grad: th.Tensor,
     lam = th.clamp(lam, min=0.0)
     return policy_grad - lam * cost_grad
 
+class SafeRolloutBufferSamples(NamedTuple):
+    observations: th.Tensor
+    actions: th.Tensor
+    old_values: th.Tensor
+    old_log_prob: th.Tensor
+    advantages: th.Tensor
+    returns: th.Tensor
+    cost_advantages: th.Tensor
 
 class SafeRolloutBuffer(RolloutBuffer):
     def __init__(self, *args, **kwargs):
@@ -76,21 +85,20 @@ class SafeRolloutBuffer(RolloutBuffer):
         self.cost_values.append(cost_value)
 
     def get(self, batch_size=None):
-        # Call the base class method to get the standard samples
-        generator = super().get(batch_size=batch_size)
+        indices = np.random.permutation(self.buffer_size)
 
-        for sample in generator:
-            # Adds cost_advantages to the returned sample
-            extended_sample = RolloutBufferSamples(
-                observations=sample.observations,
-                actions=sample.actions,
-                values=sample.values,
-                log_probs=sample.log_probs,
-                advantages=sample.advantages,
-                returns=sample.returns,
-                cost_advantages=self.cost_advantages[sample.indices] if hasattr(sample,"indices") else self.cost_advantages
+        for start_idx in range(0, self.buffer_size, batch_size or self.buffer_size):
+            batch_indices = indices[start_idx: start_idx + (batch_size or self.buffer_size)]
+
+            yield SafeRolloutBufferSamples(
+                observations=self.observations[batch_indices],
+                actions=self.actions[batch_indices],
+                old_values=self.values[batch_indices],
+                old_log_prob=self.log_probs[batch_indices],
+                advantages=self.advantages[batch_indices],
+                returns=self.returns[batch_indices],
+                cost_advantages=self.cost_advantages[batch_indices]
             )
-            yield extended_sample
 
     def compute_returns_and_advantage(self, last_values, dones):
         super().compute_returns_and_advantage(last_values, dones)
