@@ -90,14 +90,22 @@ class SafeRolloutBuffer(RolloutBuffer):
         for start_idx in range(0, self.buffer_size, batch_size or self.buffer_size):
             batch_indices = indices[start_idx: start_idx + (batch_size or self.buffer_size)]
 
+            observations = self.observations[batch_indices]
+            actions = th.tensor(self.actions[batch_indices], dtype=th.float32, device=self.device)
+            old_values = th.tensor(self.values[batch_indices], dtype=th.float32, device=self.device)
+            old_log_prob = th.tensor(self.log_probs[batch_indices], dtype=th.float32, device=self.device)
+            advantages = th.tensor(self.advantages[batch_indices], dtype=th.float32, device=self.device)
+            returns = th.tensor(self.returns[batch_indices], dtype=th.float32, device=self.device)
+            cost_advantages = th.tensor(self.cost_advantages[batch_indices], dtype=th.float32, device=self.device)
+
             yield SafeRolloutBufferSamples(
-                observations=self.observations[batch_indices],
-                actions=self.actions[batch_indices],
-                old_values=self.values[batch_indices],
-                old_log_prob=self.log_probs[batch_indices],
-                advantages=self.advantages[batch_indices],
-                returns=self.returns[batch_indices],
-                cost_advantages=self.cost_advantages[batch_indices]
+                observations=observations,
+                actions=actions,
+                old_values=old_values,
+                old_log_prob=old_log_prob,
+                advantages=advantages,
+                returns=returns,
+                cost_advantages=cost_advantages
             )
 
     def compute_returns_and_advantage(self, last_values, dones):
