@@ -79,8 +79,8 @@ class SafeRolloutBuffer(RolloutBuffer):
         super().compute_returns_and_advantage(last_values, dones)
 
         # Convert to tensors
-        cost_tensor = th.tensor(self.costs, dtype=th.float32, device=self.values.device)
-        cost_values_tensor = th.tensor(self.cost_values, dtype=th.float32, device=self.values.device)
+        cost_tensor = th.tensor(self.costs, dtype=th.float32, device=self.device)
+        cost_values_tensor = th.tensor(self.cost_values, dtype=th.float32, device=self.device)
 
         last_cost_value = cost_values_tensor[-1]
         self.cost_advantages = cost_tensor - cost_values_tensor # simple version, possibly use GAE
