@@ -57,6 +57,35 @@ def _a_projection(policy_grad: th.Tensor,
     return policy_grad - lam * cost_grad
 
 
+class SafeRolloutBuffer(RolloutBuffer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.costs = []
+        self.cost_values = []
+        self.cost_advantages = None
+        self.cost_returns = None
+
+    def reset(self):
+        super().reset()
+        self.costs = []
+        self.cost_values = []
+
+    def add(self, obs, action, reward, episode_start, value, log_prob, cost=0.0, cost_value=0.0):
+        super().add(obs, action, reward, episode_start, value, log_prob)
+        self.costs.append(cost)
+        self.cost_values.append(cost_value)
+
+    def compute_returns_and_advantage(self, last_values, dones):
+        super().compute_returns_and_advantage(last_values, dones)
+
+        # Convert to tensors
+        cost_tensor = th.tensor(self.costs, dtype=th.float32, device=self.values.device)
+        cost_values_tensor = th.tensor(self.cost_values, dtype=th.float32, device=self.values.device)
+
+        last_cost_value = cost_values_tensor[-1]
+        self.cost_advantages = cost_tensor - cost_values_tensor # simple version, possibly use GAE
+        self.cost_returns = self.cost_advantages + cost_values_tensor
+
 class SafePPO_GBRL(PPO_GBRL):
     """
     TODO: description
@@ -68,6 +97,17 @@ class SafePPO_GBRL(PPO_GBRL):
         self.cost_value_source = kwargs.pop("cost_value_source", None)
 
         super().__init__(*args, **kwargs)
+
+        # this overrides the standard RolloutBuffer
+        self.rollout_buffer = SafeRolloutBuffer(
+            self.n_steps,
+            self.observation_space,
+            self.action_space,
+            self.device,
+            gae_lambda=self.gae_lambda,
+            gamma=self.gamma,
+            n_envs=self.n_envs,
+        )
 
         if not hasattr(self, "current_cost_estimate"):
             self.current_cost_estimate = 0.0
@@ -310,7 +350,7 @@ class SafePPO_GBRL(PPO_GBRL):
     def collect_rollouts(self,
                          env: VecEnv,
                          callback,
-                         rollout_buffer: RolloutBuffer,
+                         rollout_buffer: SafeRolloutBuffer,
                          n_rollout_steps: int) -> bool:
         """
         Collect experiences from the environment and store them in the buffer.
@@ -344,7 +384,7 @@ class SafePPO_GBRL(PPO_GBRL):
 
             # Store data in the buffer
             rollout_buffer.add(self._last_obs, actions.detach().cpu().numpy(), rewards, self._last_episode_starts,
-                               values, log_probs)
+                               values, log_probs, cost=costs[0], cost_value=0.0)
 
             self._last_obs = new_obs
             self._last_episode_starts = dones
@@ -384,7 +424,6 @@ class SafePPO_GBRL(PPO_GBRL):
 
         callback.on_rollout_end()
         return True
-
 
 """
 from algos.ppo import PPO_GBRL
