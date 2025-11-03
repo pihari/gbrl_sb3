@@ -90,7 +90,7 @@ class SafeRolloutBuffer(RolloutBuffer):
         for start_idx in range(0, self.buffer_size, batch_size or self.buffer_size):
             batch_indices = indices[start_idx: start_idx + (batch_size or self.buffer_size)]
 
-            observations = self.observations[batch_indices]
+            observations = th.tensor(self.observations[batch_indices], dtype=th.float32, device=self.device)
             actions = th.tensor(self.actions[batch_indices], dtype=th.float32, device=self.device)
             old_values = th.tensor(self.values[batch_indices], dtype=th.float32, device=self.device)
             old_log_prob = th.tensor(self.log_probs[batch_indices], dtype=th.float32, device=self.device)
