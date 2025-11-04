@@ -206,7 +206,6 @@ class SafePPO_GBRL(PPO_GBRL):
                 if isinstance(self.action_space, spaces.Discrete):
                     actions = actions.long().flatten()
 
-                print(f"Rollout_data type: {type(rollout_data)}")
                 values, log_prob, entropy = self.policy.evaluate_actions(
                     rollout_data.observations, actions, action_masks=action_masks
                 )
@@ -242,6 +241,7 @@ class SafePPO_GBRL(PPO_GBRL):
                     and (rollout_data.cost_advantages is not None)
                 )
                 if use_safety:
+                    print("Cost advantages? ", rollout_data.cost_advantages)
                     # recompute log_prob for a clean graph (keeps autograd tidy)
                     _, log_prob_cost, _ = self.policy.evaluate_actions(
                         rollout_data.observations, actions, action_masks=action_masks
@@ -308,8 +308,6 @@ class SafePPO_GBRL(PPO_GBRL):
                         policy_grad_clip=getattr(self, "max_policy_grad_norm", None),
                         value_grad_clip=getattr(self, "max_value_grad_norm", None)
                     )
-                else:
-                    print("[WARN] No gradients found for policy step — skipping .step()")
 
                 # Optional detailed logging for trees (guard methods)
                 if hasattr(self.policy, "get_params"):
