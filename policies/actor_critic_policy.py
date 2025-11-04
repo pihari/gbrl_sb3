@@ -383,6 +383,9 @@ class ActorCriticPolicy(BasePolicy):
 
     def step(self, observations: Optional[Union[np.array, th.Tensor]] = None, policy_grad_clip: float = None,
              value_grad_clip: float = None) -> None:
+        # important check if the gradients actually exist
+        if self.params[0].grad is None:
+            return
         if self.nn_critic:
             self.value_optimizer.step()
             return self.model.step(observations=observations, policy_grad_clip=policy_grad_clip)
