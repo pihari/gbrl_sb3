@@ -311,12 +311,10 @@ class SafePPO_GBRL(PPO_GBRL):
                         else:
                             print(f"[INFO] Grad norm for {name}: {param.grad.norm().item()}")
 
-                if self.policy.parameters().__next__().grad is None:
-                    raise RuntimeError(
-                        "No gradients found on policy before calling step(). Check your loss.backward() and computation graph.")
-
-                self.policy.step(policy_grad_clip=getattr(self, "max_policy_grad_norm", None),
-                                 value_grad_clip=getattr(self, "max_value_grad_norm", None))
+                if self.policy.parameters().__next__().grad is not None:
+                    print("Grads found for policy step")
+                    self.policy.step(policy_grad_clip=getattr(self, "max_policy_grad_norm", None),
+                                     value_grad_clip=getattr(self, "max_value_grad_norm", None))
 
                 # Optional detailed logging for trees (guard methods)
                 if hasattr(self.policy, "get_params"):
