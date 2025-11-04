@@ -70,20 +70,25 @@ class SafeRolloutBufferSamples(NamedTuple):
 class SafeRolloutBuffer(RolloutBuffer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.costs = []
-        self.cost_values = []
+        self.costs = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+        self.cost_values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.cost_advantages = None
         self.cost_returns = None
+        self.pos = 0
 
     def reset(self):
         super().reset()
-        self.costs = []
-        self.cost_values = []
+        self.costs = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+        self.cost_values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+        self.cost_advantages = None
+        self.cost_returns = None
+        self.pos = 0
 
     def add(self, obs, action, reward, episode_start, value, log_prob, cost=0.0, cost_value=0.0):
         super().add(obs, action, reward, episode_start, value, log_prob)
-        self.costs.append(cost)
-        self.cost_values.append(cost_value)
+        self.costs[self.pos] = cost  # shape (n_envs,)
+        self.cost_values[self.pos] = cost_value
+        self.pos += 1
 
     def get(self, batch_size=None):
         indices = np.random.permutation(self.buffer_size)
@@ -101,6 +106,19 @@ class SafeRolloutBuffer(RolloutBuffer):
             cost_returns = th.tensor(self.cost_returns[batch_indices], dtype=th.float32, device=self.device)
 
             print(f"SafeRolloutBuffer types: Obs? {type(observations) == th.Tensor} Actions? {type(actions) == th.Tensor}")
+
+            if not self.generator_ready:
+                self.observations = self.swap_and_flatten(self.observations)
+                self.actions = self.swap_and_flatten(self.actions)
+                self.values = self.swap_and_flatten(self.values)
+                self.log_probs = self.swap_and_flatten(self.log_probs)
+                self.advantages = self.swap_and_flatten(self.advantages)
+                self.returns = self.swap_and_flatten(self.returns)
+                self.costs = self.costs.reshape(-1)  # flatten (n_steps, n_envs)
+                self.cost_values = self.cost_values.reshape(-1)
+                self.cost_returns = self.cost_returns.reshape(-1)
+                self.cost_advantages = self.cost_advantages.reshape(-1)
+                self.generator_ready = True
 
             yield SafeRolloutBufferSamples(
                 observations=observations,
