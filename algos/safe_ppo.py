@@ -132,7 +132,12 @@ class SafePPO_GBRL(PPO_GBRL):
 
         super().__init__(*args, **kwargs)
 
-        # this overrides the standard RolloutBuffer
+        if not hasattr(self, "current_cost_estimate"):
+            self.current_cost_estimate = 0.0
+
+    def _setup_model(self) -> None:
+        super()._setup_model()
+
         self.rollout_buffer = SafeRolloutBuffer(
             self.n_steps,
             self.observation_space,
@@ -142,9 +147,6 @@ class SafePPO_GBRL(PPO_GBRL):
             gamma=self.gamma,
             n_envs=self.n_envs,
         )
-
-        if not hasattr(self, "current_cost_estimate"):
-            self.current_cost_estimate = 0.0
 
     def train(self) -> None:
         self.policy.set_training_mode(True)
