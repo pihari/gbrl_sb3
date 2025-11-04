@@ -65,6 +65,7 @@ class SafeRolloutBufferSamples(NamedTuple):
     advantages: th.Tensor
     returns: th.Tensor
     cost_advantages: th.Tensor
+    cost_returns: th.Tensor
 
 class SafeRolloutBuffer(RolloutBuffer):
     def __init__(self, *args, **kwargs):
@@ -121,17 +122,10 @@ class SafePPO_GBRL(PPO_GBRL):
         self.cost_value_source = kwargs.pop("cost_value_source", None)
 
         # delay setup
-        kwargs["_init_setup_model"] = False
-        super().__init__(*args, **kwargs)
-        self.rollout_buffer = SafeRolloutBuffer(
-            self.n_steps,
-            self.observation_space,
-            self.action_space,
-            self.device,
-            gae_lambda=self.gae_lambda,
-            gamma=self.gamma,
-            n_envs=self.n_envs,
-        )
+        # kwargs["_init_setup_model"] = False
+        super().__init__(*args, _init_setup_model=False, **kwargs)
+        self.rollout_buffer_class = SafeRolloutBuffer
+        self.ppo_setup_model()
 
         if not hasattr(self, "current_cost_estimate"):
             self.current_cost_estimate = 0.0
