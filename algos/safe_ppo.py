@@ -117,7 +117,7 @@ class SafeRolloutBuffer(RolloutBuffer):
             cost_advantages = th.tensor(self.cost_advantages[batch_indices], dtype=th.float32, device=self.device)
             cost_returns = th.tensor(self.cost_returns[batch_indices], dtype=th.float32, device=self.device)
 
-            print(f"SafeRolloutBuffer types: Obs? {type(observations) == th.Tensor} Actions? {type(actions) == th.Tensor}")
+            # print(f"SafeRolloutBuffer types: Obs? {type(observations) == th.Tensor} Actions? {type(actions) == th.Tensor}")
 
             yield SafeRolloutBufferSamples(
                 observations=observations,
@@ -198,9 +198,6 @@ class SafePPO_GBRL(PPO_GBRL):
         all_cost_advantages = []
 
         continue_training = True
-
-        print("Grow policy?: ", self.policy_kwargs)
-        print("Number of estimators:", getattr(self.policy, 'n_estimators', 'N/A'))
 
         for _ in range(self.n_epochs):
             for rollout_data in self.rollout_buffer.get(self.batch_size):
@@ -304,17 +301,15 @@ class SafePPO_GBRL(PPO_GBRL):
                     break
 
                 # Fit GBRL models on the grads currently in .grad
-                for name, param in self.policy.named_parameters():
-                    if param.requires_grad:
-                        if param.grad is None:
-                            print(f"[WARN] No grad for param: {name}")
-                        else:
-                            print(f"[INFO] Grad norm for {name}: {param.grad.norm().item()}")
 
-                if self.policy.parameters().__next__().grad is not None:
+                if any(p.grad is not None and p.requires_grad for p in self.policy.parameters()):
                     print("Grads found for policy step")
-                    self.policy.step(policy_grad_clip=getattr(self, "max_policy_grad_norm", None),
-                                     value_grad_clip=getattr(self, "max_value_grad_norm", None))
+                    self.policy.step(
+                        policy_grad_clip=getattr(self, "max_policy_grad_norm", None),
+                        value_grad_clip=getattr(self, "max_value_grad_norm", None)
+                    )
+                else:
+                    print("[WARN] No gradients found for policy step — skipping .step()")
 
                 # Optional detailed logging for trees (guard methods)
                 if hasattr(self.policy, "get_params"):
