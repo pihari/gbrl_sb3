@@ -100,6 +100,8 @@ class SafeRolloutBuffer(RolloutBuffer):
             cost_advantages = th.tensor(self.cost_advantages[batch_indices], dtype=th.float32, device=self.device)
             cost_returns = th.tensor(self.cost_returns[batch_indices], dtype=th.float32, device=self.device)
 
+            print(f"SafeRolloutBuffer types: Obs? {type(observations) == th.Tensor} Actions? {type(actions) == th.Tensor}")
+
             yield SafeRolloutBufferSamples(
                 observations=observations,
                 actions=actions,
@@ -187,6 +189,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 if isinstance(self.action_space, spaces.Discrete):
                     actions = actions.long().flatten()
 
+                print(f"Rollout_data type: {type(rollout_data)}")
                 values, log_prob, entropy = self.policy.evaluate_actions(
                     rollout_data.observations, actions, action_masks=action_masks
                 )
