@@ -304,6 +304,17 @@ class SafePPO_GBRL(PPO_GBRL):
                     break
 
                 # Fit GBRL models on the grads currently in .grad
+                for name, param in self.policy.named_parameters():
+                    if param.requires_grad:
+                        if param.grad is None:
+                            print(f"[WARN] No grad for param: {name}")
+                        else:
+                            print(f"[INFO] Grad norm for {name}: {param.grad.norm().item()}")
+
+                if self.policy.parameters().__next__().grad is None:
+                    raise RuntimeError(
+                        "No gradients found on policy before calling step(). Check your loss.backward() and computation graph.")
+
                 self.policy.step(policy_grad_clip=getattr(self, "max_policy_grad_norm", None),
                                  value_grad_clip=getattr(self, "max_value_grad_norm", None))
 
