@@ -182,6 +182,9 @@ class SafePPO_GBRL(PPO_GBRL):
 
         continue_training = True
 
+        print("Grow policy:", self.policy.grow_policy)
+        print("Number of estimators:", getattr(self.policy, 'n_estimators', 'N/A'))
+
         for _ in range(self.n_epochs):
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 actions = rollout_data.actions
