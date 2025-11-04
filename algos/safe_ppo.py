@@ -241,7 +241,6 @@ class SafePPO_GBRL(PPO_GBRL):
                     and (rollout_data.cost_advantages is not None)
                 )
                 if use_safety:
-                    print("Cost advantages? ", rollout_data.cost_advantages)
                     # recompute log_prob for a clean graph (keeps autograd tidy)
                     _, log_prob_cost, _ = self.policy.evaluate_actions(
                         rollout_data.observations, actions, action_masks=action_masks
@@ -253,6 +252,7 @@ class SafePPO_GBRL(PPO_GBRL):
                     cost_loss = -(log_prob_cost * A_cost).mean()
 
                     policy_params = [p for p in self.policy.parameters() if p.requires_grad]
+                    print(f"Cost Loss: {cost_loss} ------ Policy params: {policy_params}")
                     if len(policy_params) > 0:
                         cost_grads = th.autograd.grad(cost_loss, policy_params, retain_graph=True, allow_unused=True)
 
