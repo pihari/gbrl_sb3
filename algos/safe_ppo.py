@@ -130,6 +130,8 @@ class SafePPO_GBRL(PPO_GBRL):
         self.use_safety_projection: bool = bool(kwargs.pop("use_safety_projection", True))
         self.cost_value_source = kwargs.pop("cost_value_source", None)
 
+        self.rollout_buffer_class = SafeRolloutBuffer
+
         super().__init__(*args, **kwargs)
 
         if not hasattr(self, "current_cost_estimate"):
