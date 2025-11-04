@@ -111,6 +111,15 @@ class SafeRolloutBuffer(RolloutBuffer):
                 cost_returns=cost_returns
             )
 
+    def compute_returns_and_advantage(self, last_values, dones):
+        super().compute_returns_and_advantage(last_values, dones)
+
+        cost_tensor = th.tensor(self.costs, dtype=th.float32, device=self.device)
+        cost_values_tensor = th.tensor(self.cost_values, dtype=th.float32, device=self.device)
+
+        self.cost_advantages = cost_tensor - cost_values_tensor
+        self.cost_returns = self.cost_advantages + cost_values_tensor
+
 class SafePPO_GBRL(PPO_GBRL):
     """
     TODO: description
