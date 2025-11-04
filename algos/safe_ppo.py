@@ -122,8 +122,8 @@ class SafePPO_GBRL(PPO_GBRL):
         self.cost_value_source = kwargs.pop("cost_value_source", None)
 
         # delay setup
-        # kwargs["_init_setup_model"] = False
-        super().__init__(*args, _init_setup_model=False, **kwargs)
+        kwargs["_init_setup_model"] = False
+        super().__init__(*args, **kwargs)
         self.rollout_buffer_class = SafeRolloutBuffer
         self.ppo_setup_model()
 
