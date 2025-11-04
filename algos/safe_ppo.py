@@ -90,6 +90,19 @@ class SafeRolloutBuffer(RolloutBuffer):
         self.cost_values[self.pos-1] = cost_value
 
     def get(self, batch_size=None):
+        if not self.generator_ready:
+            self.observations = self.swap_and_flatten(self.observations)
+            self.actions = self.swap_and_flatten(self.actions)
+            self.values = self.swap_and_flatten(self.values)
+            self.log_probs = self.swap_and_flatten(self.log_probs)
+            self.advantages = self.swap_and_flatten(self.advantages)
+            self.returns = self.swap_and_flatten(self.returns)
+            self.costs = self.costs.reshape(-1)  # flatten (n_steps, n_envs)
+            self.cost_values = self.cost_values.reshape(-1)
+            self.cost_returns = self.cost_returns.reshape(-1)
+            self.cost_advantages = self.cost_advantages.reshape(-1)
+            self.generator_ready = True
+
         indices = np.random.permutation(self.buffer_size)
 
         for start_idx in range(0, self.buffer_size, batch_size or self.buffer_size):
@@ -105,19 +118,6 @@ class SafeRolloutBuffer(RolloutBuffer):
             cost_returns = th.tensor(self.cost_returns[batch_indices], dtype=th.float32, device=self.device)
 
             print(f"SafeRolloutBuffer types: Obs? {type(observations) == th.Tensor} Actions? {type(actions) == th.Tensor}")
-
-            if not self.generator_ready:
-                self.observations = self.swap_and_flatten(self.observations)
-                self.actions = self.swap_and_flatten(self.actions)
-                self.values = self.swap_and_flatten(self.values)
-                self.log_probs = self.swap_and_flatten(self.log_probs)
-                self.advantages = self.swap_and_flatten(self.advantages)
-                self.returns = self.swap_and_flatten(self.returns)
-                self.costs = self.costs.reshape(-1)  # flatten (n_steps, n_envs)
-                self.cost_values = self.cost_values.reshape(-1)
-                self.cost_returns = self.cost_returns.reshape(-1)
-                self.cost_advantages = self.cost_advantages.reshape(-1)
-                self.generator_ready = True
 
             yield SafeRolloutBufferSamples(
                 observations=observations,
