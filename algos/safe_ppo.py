@@ -4,7 +4,7 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 from gymnasium import spaces
-from stable_baselines3.common.buffers import RolloutBuffer, RolloutBufferSamples, SafeRolloutBuffer
+from stable_baselines3.common.buffers import RolloutBuffer, RolloutBufferSamples
 from stable_baselines3.common.vec_env import VecEnv
 from typing import NamedTuple
 
@@ -65,6 +65,50 @@ class SafeRolloutBufferSamples(NamedTuple):
     advantages: th.Tensor
     returns: th.Tensor
     cost_advantages: th.Tensor
+
+class SafeRolloutBuffer(RolloutBuffer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.costs = []
+        self.cost_values = []
+        self.cost_advantages = None
+        self.cost_returns = None
+
+    def reset(self):
+        super().reset()
+        self.costs = []
+        self.cost_values = []
+
+    def add(self, obs, action, reward, episode_start, value, log_prob, cost=0.0, cost_value=0.0):
+        super().add(obs, action, reward, episode_start, value, log_prob)
+        self.costs.append(cost)
+        self.cost_values.append(cost_value)
+
+    def get(self, batch_size=None):
+        indices = np.random.permutation(self.buffer_size)
+
+        for start_idx in range(0, self.buffer_size, batch_size or self.buffer_size):
+            batch_indices = indices[start_idx: start_idx + (batch_size or self.buffer_size)]
+
+            observations = th.tensor(self.observations[batch_indices], dtype=th.float32, device=self.device)
+            actions = th.tensor(self.actions[batch_indices], dtype=th.float32, device=self.device)
+            old_values = th.tensor(self.values[batch_indices], dtype=th.float32, device=self.device)
+            old_log_prob = th.tensor(self.log_probs[batch_indices], dtype=th.float32, device=self.device)
+            advantages = th.tensor(self.advantages[batch_indices], dtype=th.float32, device=self.device)
+            returns = th.tensor(self.returns[batch_indices], dtype=th.float32, device=self.device)
+            cost_advantages = th.tensor(self.cost_advantages[batch_indices], dtype=th.float32, device=self.device)
+            cost_returns = th.tensor(self.cost_returns[batch_indices], dtype=th.float32, device=self.device)
+
+            yield SafeRolloutBufferSamples(
+                observations=observations,
+                actions=actions,
+                old_values=old_values,
+                old_log_prob=old_log_prob,
+                advantages=advantages,
+                returns=returns,
+                cost_advantages=cost_advantages,
+                cost_returns=cost_returns
+            )
 
 class SafePPO_GBRL(PPO_GBRL):
     """
