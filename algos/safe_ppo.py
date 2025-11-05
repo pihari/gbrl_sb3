@@ -272,7 +272,7 @@ class SafePPO_GBRL(PPO_GBRL):
                     cost_loss = -(log_prob_cost * A_cost).mean()
 
                     policy_params = [p for p in self.policy.parameters() if p.requires_grad]
-                    print(f"Cost Loss: {cost_loss} ------ Policy params: {policy_params}")
+                    #print(f"Cost Loss: {cost_loss} ------ Policy params: {policy_params}")
                     if len(policy_params) > 0:
                         cost_grads = th.autograd.grad(cost_loss, policy_params, retain_graph=True, allow_unused=True)
 
@@ -288,7 +288,7 @@ class SafePPO_GBRL(PPO_GBRL):
                             c_val = float(getattr(self, "current_cost_estimate", float(A_cost.mean().item())))
 
                         g_safe = _a_projection(g, b, c_val, self.cost_threshold)
-                        print(f"Safe gradient: {g_safe} with cost_value: {c_val}, g: {g} and b: {b}")
+                        #print(f"Safe gradient: {g_safe} with cost_value: {c_val}, g: {g} and b: {b}")
                         _write_back_grads(policy_params, g_safe)
 
                     # cost_losses.append(cost_loss.item())
