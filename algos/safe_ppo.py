@@ -46,6 +46,7 @@ def _a_projection(policy_grad: th.Tensor,
                   cost_threshold: float,
                   eps: float = 1e-10) -> th.Tensor:
     """
+    closer to theta-projection
     g* = g - λ* b,  λ* = max(0, (<g,b> - (c - d)) / ||b||^2)
     """
     if policy_grad.numel() == 0 or cost_grad.numel() == 0:
@@ -56,6 +57,24 @@ def _a_projection(policy_grad: th.Tensor,
     lam = (inner - violation) / bnorm2
     lam = th.clamp(lam, min=0.0)
     return policy_grad - lam * cost_grad
+
+def _lyapunov_safety_projection(a_raw: th.Tensor,
+                               a_baseline: th.Tensor,
+                               grad_Q_cost: th.Tensor,
+                               e: th.Tensor,
+                               eps: float = 1e-10) -> th.Tensor:
+    """
+    Project raw action onto Lyapunov-feasible set:
+    a_safe = argmin_a 0.5 * ||a - a_raw||^2
+             s.t. (a - a_baseline)^T grad_Q_cost <= e.
+    """
+    diff = a_raw - a_baseline
+    g = grad_Q_cost
+    numerator = (diff * g).sum(dim=-1) - e
+    denominator = (g * g).sum(dim=-1) + eps
+    lam = th.clamp(numerator / denominator, min=0.0).unsqueeze(-1)
+    a_safe = a_raw - lam * g
+    return a_safe
 
 class SafeRolloutBufferSamples(NamedTuple):
     observations: th.Tensor
@@ -188,6 +207,7 @@ class SafePPO_GBRL(PPO_GBRL):
 
         entropy_losses = []
         policy_losses, value_losses = [], []
+        cost_losses = []
         clip_fractions = []
         approx_kl_divs = []
         theta_maxs, theta_mins = [], []
@@ -269,6 +289,8 @@ class SafePPO_GBRL(PPO_GBRL):
 
                         g_safe = _a_projection(g, b, c_val, self.cost_threshold)
                         _write_back_grads(policy_params, g_safe)
+
+                    # cost_losses.append(cost_loss.item())
 
                 if hasattr(self.policy, "nn_critic") and self.policy.nn_critic:
                     th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
@@ -420,6 +442,9 @@ class SafePPO_GBRL(PPO_GBRL):
             with th.no_grad():
                 actions, values, log_probs = self.policy.forward(self._last_obs, deterministic=False)
 
+            # Lyapunov safety layer
+            # safe_action = _lyapunov_safety_projection(actions, a_baseline=...)
+
             new_obs, rewards, dones, infos = env.step(actions.cpu().numpy())
 
             self.num_timesteps += env.num_envs
@@ -434,7 +459,9 @@ class SafePPO_GBRL(PPO_GBRL):
                 info["episode_cost"] = episode_costs[idx]
                 info["episode_reward"] = episode_rewards[idx]
 
+            print(f"Cost information: {costs}")
             # Store data in the buffer
+            # TODO: cost value is always 0
             rollout_buffer.add(self._last_obs, actions.detach().cpu().numpy(), rewards, self._last_episode_starts,
                                values, log_probs, cost=costs[0], cost_value=0.0)
 
