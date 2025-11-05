@@ -288,6 +288,7 @@ class SafePPO_GBRL(PPO_GBRL):
                             c_val = float(getattr(self, "current_cost_estimate", float(A_cost.mean().item())))
 
                         g_safe = _a_projection(g, b, c_val, self.cost_threshold)
+                        print(f"Safe gradient: {g_safe} with cost_value: {c_val}, g: {g} and b: {b}")
                         _write_back_grads(policy_params, g_safe)
 
                     # cost_losses.append(cost_loss.item())
@@ -459,11 +460,10 @@ class SafePPO_GBRL(PPO_GBRL):
                 info["episode_cost"] = episode_costs[idx]
                 info["episode_reward"] = episode_rewards[idx]
 
-            print(f"Cost information: {costs}")
             # Store data in the buffer
             # TODO: cost value is always 0
             rollout_buffer.add(self._last_obs, actions.detach().cpu().numpy(), rewards, self._last_episode_starts,
-                               values, log_probs, cost=costs[0], cost_value=0.0)
+                               values, log_probs, costs, cost_value=0.0)
 
             self._last_obs = new_obs
             self._last_episode_starts = dones
