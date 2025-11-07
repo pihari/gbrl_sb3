@@ -178,6 +178,9 @@ class SafePPO_GBRL(PPO_GBRL):
             self.current_cost_estimate = 0.0
 
     def train(self) -> None:
+        """
+        Update policy using current safe rollout buffer.
+        """
         self.policy.set_training_mode(True)
 
         clip_range = self.clip_range(self._current_progress_remaining)
@@ -255,6 +258,7 @@ class SafePPO_GBRL(PPO_GBRL):
 
                 loss.backward()
 
+                # The safety projection part
                 use_safety = (
                     self.use_safety_projection
                     and hasattr(rollout_data, "cost_advantages")
@@ -270,26 +274,22 @@ class SafePPO_GBRL(PPO_GBRL):
                         A_cost = A_cost.view_as(log_prob_cost)
 
                     cost_loss = -(log_prob_cost * A_cost).mean()
+                    cost_loss.backward()
 
                     policy_params = [p for p in self.policy.parameters() if p.requires_grad]
                     #print(f"Cost Loss: {cost_loss} ------ Policy params: {policy_params}")
                     if len(policy_params) > 0:
-                        cost_grads = th.autograd.grad(cost_loss, policy_params, retain_graph=True, allow_unused=True)
+                        #cost_grads = th.autograd.grad(cost_loss, policy_params, retain_graph=True, allow_unused=True)
 
                         g = _flatten_grads(policy_params)
-                        b_parts = []
-                        for p, cg in zip(policy_params, cost_grads):
-                            b_parts.append(th.zeros_like(p).view(-1) if cg is None else cg.view(-1))
-                        b = th.cat(b_parts) if len(b_parts) > 0 else th.zeros_like(g)
+                        self.policy.zero_grad()
+                        cost_loss.backward()
+                        b = _flatten_grads(self.policy.parameters())
 
-                        if callable(self.cost_value_source):
-                            c_val = float(self.cost_value_source())
-                        else:
-                            c_val = float(getattr(self, "current_cost_estimate", float(A_cost.mean().item())))
-
-                        g_safe = _a_projection(g, b, c_val, self.cost_threshold)
-                        #print(f"Safe gradient: {g_safe} with cost_value: {c_val}, g: {g} and b: {b}")
-                        _write_back_grads(policy_params, g_safe)
+                        cost_value = float(getattr(self, "current_cost_estimate", rollout_data.cost_advantages.mean().item()))
+                        g_safe = _a_projection(g, b, cost_value, self.cost_threshold)
+                        _write_back_grads(self.policy.parameters(), g_safe)
+                        self.policy.step(policy_grad_clip=self.max_policy_grad_norm)
 
                     # cost_losses.append(cost_loss.item())
 
