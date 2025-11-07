@@ -288,7 +288,7 @@ class SafePPO_GBRL(PPO_GBRL):
                         cost_value = float(getattr(self, "current_cost_estimate", rollout_data.cost_advantages.mean().item()))
                         g_safe = _a_projection(g, b, cost_value, self.cost_threshold)
                         _write_back_grads(self.policy.parameters(), g_safe)
-                        self.policy.step(policy_grad_clip=self.max_policy_grad_norm)
+                        #self.policy.step(policy_grad_clip=self.max_policy_grad_norm)
 
                     # cost_losses.append(cost_loss.item())
 
