@@ -256,7 +256,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 if hasattr(self.policy, "nn_critic") and self.policy.nn_critic and hasattr(self.policy, "value_optimizer"):
                     self.policy.value_optimizer.zero_grad()
 
-                loss.backward()
+                loss.backward(retain_graph=True)
 
                 # The safety projection part
                 use_safety = (
@@ -274,7 +274,6 @@ class SafePPO_GBRL(PPO_GBRL):
                         A_cost = A_cost.view_as(log_prob_cost)
 
                     cost_loss = -(log_prob_cost * A_cost).mean()
-                    cost_loss.backward()
 
                     policy_params = [p for p in self.policy.parameters() if p.requires_grad]
                     #print(f"Cost Loss: {cost_loss} ------ Policy params: {policy_params}")
