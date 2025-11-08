@@ -222,7 +222,7 @@ class SafePPO_GBRL(PPO_GBRL):
 
         continue_training = True
 
-        for _ in range(self.n_epochs):
+        for e in range(self.n_epochs):
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 actions = rollout_data.actions
                 action_masks = None if not getattr(self, "use_masking", False) else getattr(rollout_data, "action_masks", None)
@@ -258,6 +258,7 @@ class SafePPO_GBRL(PPO_GBRL):
 
                 loss.backward(retain_graph=True)
 
+                self.use_safety_projection = e > 0.3 * self.n_epochs
                 # The safety projection part
                 use_safety = (
                     self.use_safety_projection
