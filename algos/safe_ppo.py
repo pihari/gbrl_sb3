@@ -477,6 +477,10 @@ class SafePPO_GBRL(PPO_GBRL):
                 info["episode_cost"] = episode_costs[idx]
                 info["episode_reward"] = episode_rewards[idx]
 
+            # Handle episode ends, safety specific data
+            completed_costs = []
+            completed_rewards = []
+            violations = 0
 
             for idx, done in enumerate(dones):
                 if done:
@@ -490,9 +494,11 @@ class SafePPO_GBRL(PPO_GBRL):
                     episode_rewards[idx] = 0.0
 
             # Store data in the buffer
-            # TODO: cost value is always 0
-            rollout_buffer.add(self._last_obs, actions.detach().cpu().numpy(), rewards, self._last_episode_starts,
-                               values, log_probs, costs, cost_value=0.0)
+            kwargs = {}
+            if self.use_masking:
+                kwargs['action_masks'] = action_masks
+            rollout_buffer.add(self._last_obs, actions, rewards, self._last_episode_starts,
+                               values, log_probs, costs, cost_value=0.0, **kwargs)
 
             self._last_obs = new_obs
             self._last_episode_starts = dones
@@ -500,24 +506,19 @@ class SafePPO_GBRL(PPO_GBRL):
             self._update_info_buffer(infos)
             n_steps += 1
 
-            # Handle episode ends, safety specific data
-            completed_costs = []
-            completed_rewards = []
-            violations = 0
-
             if completed_costs:
                 self.logger.record("rollout/ep_cost_mean", np.mean(completed_costs))
                 self.logger.record("rollout/ep_rew_mean", np.mean(completed_rewards))
                 self.logger.record("rollout/constraint_violation_count", violations)
                 self.logger.record("rollout/constraint_violation_rate", violations / len(completed_costs))
 
-            if not callback.on_step():
-                return False
+            #if not callback.on_step():
+            #    return False
 
         with th.no_grad():
             values = self.policy.predict_values(self._last_obs, requires_grad=False)
 
-        rollout_buffer.compute_returns_and_advantage(last_values=values.detach(),
+        rollout_buffer.compute_returns_and_advantage(last_values=values,
                                                      dones=self._last_episode_starts)
         callback.on_rollout_end()
         return True
