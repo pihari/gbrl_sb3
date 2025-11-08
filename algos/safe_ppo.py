@@ -374,37 +374,37 @@ class SafePPO_GBRL(PPO_GBRL):
             except Exception:
                 pass
 
-            self.logger.record("train/entropy_loss", float(np.mean(entropy_losses)))
-            self.logger.record("train/policy_gradient_loss", float(np.mean(policy_losses)))
-            self.logger.record("train/value_loss", float(np.mean(value_losses)))
-            self.logger.record("train/approx_kl", float(np.mean(approx_kl_divs)))
-            self.logger.record("train/clip_fraction", float(np.mean(clip_fractions)))
+            iteration = self.policy.get_iteration()
+            num_trees = self.policy.get_num_trees()
+            value_iteration = 0
 
-            # Tree stats if available
-            if hasattr(self.policy, "get_total_iterations"):
-                self.logger.record("train/total_boosting_iterations", self.policy.get_total_iterations())
-            if hasattr(self.policy, "get_iteration"):
-                try:
-                    it = self.policy.get_iteration()
-                    if isinstance(it, tuple):
-                        pit, vit = it
-                        self.logger.record("train/policy_boosting_iterations", pit)
-                        self.logger.record("train/value_boosting_iteration", vit)
-                    else:
-                        self.logger.record("train/policy_boosting_iterations", it)
-                except Exception:
-                    pass
-            if hasattr(self.policy, "get_num_trees"):
-                try:
-                    nt = self.policy.get_num_trees()
-                    if isinstance(nt, tuple):
-                        pnt, vnt = nt
-                        self.logger.record("train/policy_num_trees", pnt)
-                        self.logger.record("train/value_num_trees", vnt)
-                    else:
-                        self.logger.record("train/policy_num_trees", nt)
-                except Exception:
-                    pass
+            if isinstance(iteration, tuple):
+                iteration, value_iteration = iteration
+            value_num_trees = 0
+            if isinstance(num_trees, tuple):
+                num_trees, value_num_trees = num_trees
+
+            self.logger.record("train/entropy_loss", np.mean(entropy_losses))
+            self.logger.record("train/policy_gradient_loss", np.mean(policy_losses))
+            self.logger.record("train/value_loss", np.mean(value_losses))
+            self.logger.record("param/theta_max", np.mean(theta_maxs))
+            self.logger.record("param/theta_min", np.mean(theta_mins))
+            self.logger.record("param/value_max", np.mean(values_maxs))
+            self.logger.record("param/value_min", np.mean(values_mins))
+            self.logger.record("param/theta_grad_max", np.mean(theta_grad_maxs))
+            self.logger.record("param/theta_grad_min", np.mean(theta_grad_mins))
+            if values_grad_maxs:
+                self.logger.record("param/value_grad_max", np.mean(values_grad_maxs))
+                self.logger.record("param/value_grad_min", np.mean(values_grad_mins))
+            self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
+            self.logger.record("train/clip_fraction", np.mean(clip_fractions))
+            self.logger.record("train/explained_variance", ev)
+            self.logger.record("train/total_boosting_iterations", self.policy.get_total_iterations())
+            self.logger.record("train/policy_boosting_iterations", iteration)
+            self.logger.record("train/value_boosting_iteration", value_iteration)
+            self.logger.record("train/policy_num_trees", num_trees)
+            self.logger.record("time/total_timesteps", self.num_timesteps)
+            self.logger.record("train/value_num_trees", value_num_trees)
 
             if log_std_s and hasattr(self.policy, "log_std"):
                 self.logger.record("param/std", float(np.mean(np.mean(np.exp(np.concatenate(log_std_s, axis=0)), axis=0))))
