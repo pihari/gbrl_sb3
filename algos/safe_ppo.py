@@ -258,7 +258,7 @@ class SafePPO_GBRL(PPO_GBRL):
 
                 loss.backward(retain_graph=True)
 
-                self.use_safety_projection = e > 0.3 * self.n_epochs
+                self.use_safety_projection = e > 1.0 * self.n_epochs
                 # The safety projection part
                 use_safety = (
                     self.use_safety_projection
@@ -266,7 +266,6 @@ class SafePPO_GBRL(PPO_GBRL):
                     and (rollout_data.cost_advantages is not None)
                 )
                 if use_safety:
-                    # recompute log_prob for a clean graph (keeps autograd tidy)
                     _, log_prob_cost, _ = self.policy.evaluate_actions(
                         rollout_data.observations, actions, action_masks=action_masks
                     )
