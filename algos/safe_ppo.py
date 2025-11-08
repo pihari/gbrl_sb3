@@ -1,5 +1,5 @@
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 import numpy as np
 import torch as th
 import torch.nn.functional as F
@@ -11,6 +11,7 @@ from stable_baselines3.common.vec_env import VecEnv
 from typing import NamedTuple
 
 from algos.ppo import PPO_GBRL
+from buffers.rollout_buffer import CategoricalRolloutBuffer, MaskableRolloutBuffer
 
 try:
     from stable_baselines3.common.distributions import DiagGaussianDistribution
@@ -426,12 +427,15 @@ class SafePPO_GBRL(PPO_GBRL):
     def collect_rollouts(self,
                          env: VecEnv,
                          callback,
-                         rollout_buffer: SafeRolloutBuffer,
+                         rollout_buffer: Union[RolloutBuffer, SafeRolloutBuffer, CategoricalRolloutBuffer, MaskableRolloutBuffer],
                          n_rollout_steps: int) -> bool:
         """
         Collect experiences from the environment and store them in the buffer.
         Overridden to extract 'cost' from info dict.
         """
+
+        self.policy.set_training_mode(False)
+
         assert self._last_obs is not None, "No previous observation was provided"
         rollout_buffer.reset()
         episode_costs = np.zeros(env.num_envs)
