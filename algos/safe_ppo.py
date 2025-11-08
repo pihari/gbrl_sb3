@@ -4,7 +4,9 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 from gymnasium import spaces
+from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.buffers import RolloutBuffer, RolloutBufferSamples
+from stable_baselines3.common.utils import obs_as_tensor
 from stable_baselines3.common.vec_env import VecEnv
 from typing import NamedTuple
 
@@ -182,7 +184,6 @@ class SafePPO_GBRL(PPO_GBRL):
         Update policy using current safe rollout buffer.
         """
         self.policy.set_training_mode(True)
-
         clip_range = self.clip_range(self._current_progress_remaining)
         if self.clip_range_vf is not None:
             clip_range_vf = self.clip_range_vf(self._current_progress_remaining)
@@ -256,9 +257,10 @@ class SafePPO_GBRL(PPO_GBRL):
                 if hasattr(self.policy, "nn_critic") and self.policy.nn_critic and hasattr(self.policy, "value_optimizer"):
                     self.policy.value_optimizer.zero_grad()
 
-                loss.backward(retain_graph=True)
-
                 self.use_safety_projection = e > 1.0 * self.n_epochs
+                # only retain graph if safety part needs it
+                loss.backward(retain_graph=self.use_safety_projection)
+
                 # The safety projection part
                 use_safety = (
                     self.use_safety_projection
@@ -439,8 +441,15 @@ class SafePPO_GBRL(PPO_GBRL):
         callback.on_rollout_start()
 
         while n_steps < n_rollout_steps:
+            if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
+                # Sample a new noise matrix
+                self.policy.reset_noise(env.num_envs)
+
             with th.no_grad():
-                actions, values, log_probs = self.policy.forward(self._last_obs, deterministic=False)
+                #actions, values, log_probs = self.policy.forward(self._last_obs, deterministic=False)
+                obs_tensor = self._last_obs if self.is_categorical else obs_as_tensor(self._last_obs, self.device)
+                action_masks = get_action_masks(env) if self.use_masking else None
+                actions, values, log_probs = self.policy(obs_tensor, action_masks=action_masks, requires_grad=False)
 
             # Lyapunov safety layer
             # safe_action = _lyapunov_safety_projection(actions, a_baseline=...)
@@ -448,6 +457,15 @@ class SafePPO_GBRL(PPO_GBRL):
             new_obs, rewards, dones, infos = env.step(actions.cpu().numpy())
 
             self.num_timesteps += env.num_envs
+
+            # Give access to local variables
+            callback.update_locals(locals())
+            if callback.on_step() is False:
+                return False
+
+            if isinstance(self.action_space, spaces.Discrete):
+                # Reshape in case of discrete action
+                actions = actions.reshape(-1, 1)
 
             # Collect per-step cost from info
             costs = np.array([info.get("cost", 0.0) for info in infos])
@@ -459,20 +477,6 @@ class SafePPO_GBRL(PPO_GBRL):
                 info["episode_cost"] = episode_costs[idx]
                 info["episode_reward"] = episode_rewards[idx]
 
-            # Store data in the buffer
-            # TODO: cost value is always 0
-            rollout_buffer.add(self._last_obs, actions.detach().cpu().numpy(), rewards, self._last_episode_starts,
-                               values, log_probs, costs, cost_value=0.0)
-
-            self._last_obs = new_obs
-            self._last_episode_starts = dones
-
-            n_steps += 1
-
-            # Handle episode ends, safety specific data
-            completed_costs = []
-            completed_rewards = []
-            violations = 0
 
             for idx, done in enumerate(dones):
                 if done:
@@ -485,6 +489,22 @@ class SafePPO_GBRL(PPO_GBRL):
                     episode_costs[idx] = 0.0
                     episode_rewards[idx] = 0.0
 
+            # Store data in the buffer
+            # TODO: cost value is always 0
+            rollout_buffer.add(self._last_obs, actions.detach().cpu().numpy(), rewards, self._last_episode_starts,
+                               values, log_probs, costs, cost_value=0.0)
+
+            self._last_obs = new_obs
+            self._last_episode_starts = dones
+
+            self._update_info_buffer(infos)
+            n_steps += 1
+
+            # Handle episode ends, safety specific data
+            completed_costs = []
+            completed_rewards = []
+            violations = 0
+
             if completed_costs:
                 self.logger.record("rollout/ep_cost_mean", np.mean(completed_costs))
                 self.logger.record("rollout/ep_rew_mean", np.mean(completed_rewards))
@@ -495,11 +515,10 @@ class SafePPO_GBRL(PPO_GBRL):
                 return False
 
         with th.no_grad():
-            values = self.policy.predict_values(self._last_obs)
+            values = self.policy.predict_values(self._last_obs, requires_grad=False)
 
         rollout_buffer.compute_returns_and_advantage(last_values=values.detach(),
                                                      dones=self._last_episode_starts)
-
         callback.on_rollout_end()
         return True
 
