@@ -313,6 +313,7 @@ class SafePPO_GBRL(PPO_GBRL):
                     break
 
                 # Fit GBRL models on the grads currently in .grad
+                print(f"Current params, grads: {self.policy.get_params()}")
                 self.policy.step(policy_grad_clip=self.max_policy_grad_norm, value_grad_clip=self.max_value_grad_norm)
                 params, grads = self.policy.get_params()
                 if isinstance(grads, tuple):
