@@ -519,7 +519,7 @@ class SafePPO_GBRL(PPO_GBRL):
             kwargs = {}
             if self.use_masking:
                 kwargs['action_masks'] = action_masks
-            rollout_buffer.add(self._last_obs, actions.detach().cpu().numpy(), rewards, self._last_episode_starts,
+            rollout_buffer.add(self._last_obs, actions, rewards, self._last_episode_starts,
                                values, log_probs, costs, cost_value=0.0, **kwargs)
 
             self._last_obs = new_obs
