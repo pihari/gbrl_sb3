@@ -96,7 +96,6 @@ class SafeRolloutBuffer(RolloutBuffer):
         self.cost_values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.cost_advantages = None
         self.cost_returns = None
-        self.pos = 0
 
     def reset(self):
         super().reset()
@@ -104,7 +103,6 @@ class SafeRolloutBuffer(RolloutBuffer):
         self.cost_values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.cost_advantages = None
         self.cost_returns = None
-        self.pos = 0
 
     def add(self, obs, action, reward, episode_start, value, log_prob, cost=0.0, cost_value=0.0):
         super().add(obs, action, reward, episode_start, value, log_prob)
@@ -112,6 +110,8 @@ class SafeRolloutBuffer(RolloutBuffer):
         self.cost_values[self.pos-1] = cost_value
 
     def get(self, batch_size=None):
+        indices = np.random.permutation(self.buffer_size * self.n_envs)
+
         if not self.generator_ready:
             self.observations = self.swap_and_flatten(self.observations)
             self.actions = self.swap_and_flatten(self.actions)
@@ -124,8 +124,6 @@ class SafeRolloutBuffer(RolloutBuffer):
             self.cost_returns = self.cost_returns.reshape(-1)
             self.cost_advantages = self.cost_advantages.reshape(-1)
             self.generator_ready = True
-
-        indices = np.random.permutation(self.buffer_size)
 
         for start_idx in range(0, self.buffer_size, batch_size or self.buffer_size):
             batch_indices = indices[start_idx: start_idx + (batch_size or self.buffer_size)]
