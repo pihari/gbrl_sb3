@@ -246,7 +246,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 if hasattr(self.policy, "nn_critic") and self.policy.nn_critic and hasattr(self.policy, "value_optimizer"):
                     self.policy.value_optimizer.zero_grad()
 
-                self.use_safety_projection = e > 1.0 * self.n_epochs
+                self.use_safety_projection = e > 0.2 * self.n_epochs
                 # only retain graph if safety part needs it
                 loss.backward(retain_graph=self.use_safety_projection)
 
