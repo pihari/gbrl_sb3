@@ -669,11 +669,11 @@ class PPO_GBRL(OnPolicyAlgorithm):
 
             self.train()
 
-        callback.on_training_end()
         cost_threshold = 25.0
         avg_cost, _ = _eval_policy_safety(self.env, self.policy)
         print(f"Policy is safe: {avg_cost <= cost_threshold}")
         return self
+        callback.on_training_end()
 
     def save(self,
              path: Union[str, pathlib.Path, io.BufferedIOBase],
