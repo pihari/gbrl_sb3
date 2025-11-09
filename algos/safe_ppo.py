@@ -137,8 +137,6 @@ class SafeRolloutBuffer(RolloutBuffer):
             cost_advantages = th.tensor(self.cost_advantages[batch_indices], dtype=th.float32, device=self.device)
             cost_returns = th.tensor(self.cost_returns[batch_indices], dtype=th.float32, device=self.device)
 
-            # print(f"SafeRolloutBuffer types: Obs? {type(observations) == th.Tensor} Actions? {type(actions) == th.Tensor}")
-
             yield SafeRolloutBufferSamples(
                 observations=observations,
                 actions=actions,
@@ -324,34 +322,23 @@ class SafePPO_GBRL(PPO_GBRL):
                     break
 
                 # Fit GBRL models on the grads currently in .grad
+                self.policy.step(policy_grad_clip=self.max_policy_grad_norm, value_grad_clip=self.max_value_grad_norm)
+                params, grads = self.policy.get_params()
+                if isinstance(grads, tuple):
+                    theta_grad, values_grad = grads
+                    theta, values = params
+                    values_grad_maxs.append(values_grad.max().item())
+                    values_grad_mins.append(values_grad.min().item())
+                else:
+                    theta_grad = grads
+                    theta = params
+                values_maxs.append(values.max().item())
+                values_mins.append(values.min().item())
 
-                if any(p.grad is not None and p.requires_grad for p in self.policy.parameters()):
-                    print("Grads found for policy step")
-                    self.policy.step(
-                        policy_grad_clip=getattr(self, "max_policy_grad_norm", None),
-                        value_grad_clip=getattr(self, "max_value_grad_norm", None)
-                    )
-
-                # Optional detailed logging for trees (guard methods)
-                if hasattr(self.policy, "get_params"):
-                    try:
-                        params, grads = self.policy.get_params()
-                        if isinstance(grads, tuple):
-                            theta_grad, values_grad = grads
-                            theta, values = params
-                            values_grad_maxs.append(values_grad.max().item())
-                            values_grad_mins.append(values_grad.min().item())
-                        else:
-                            theta_grad = grads
-                            theta = params
-                        values_maxs.append(values.max().item())
-                        values_mins.append(values.min().item())
-                        theta_maxs.append(theta.max().item())
-                        theta_mins.append(theta.min().item())
-                        theta_grad_maxs.append(theta_grad.max().item())
-                        theta_grad_mins.append(theta_grad.min().item())
-                    except Exception:
-                        pass
+                theta_maxs.append(theta.max().item())
+                theta_mins.append(theta.min().item())
+                theta_grad_maxs.append(theta_grad.max().item())
+                theta_grad_mins.append(theta_grad.min().item())
 
                 self._n_updates += 1
                 clip_fraction = th.mean((th.abs(ratio - 1) > clip_range).float()).item()
