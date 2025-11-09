@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from gymnasium import spaces
 from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.buffers import RolloutBuffer, RolloutBufferSamples
-from stable_baselines3.common.utils import obs_as_tensor
+from stable_baselines3.common.utils import obs_as_tensor, update_learning_rate
 from stable_baselines3.common.vec_env import VecEnv
 from typing import NamedTuple
 
@@ -186,25 +186,17 @@ class SafePPO_GBRL(PPO_GBRL):
             clip_range_vf = self.clip_range_vf(self._current_progress_remaining)
 
         # Optional: schedules and logging (guard attributes)
-        if hasattr(self.policy, "action_dist") and isinstance(self.policy.action_dist, DiagGaussianDistribution):
-            if hasattr(self.policy, "log_std_optimizer") and hasattr(self.policy, "log_std_schedule"):
-                from stable_baselines3.common.utils import update_learning_rate
-                update_learning_rate(self.policy.log_std_optimizer,
-                                     self.policy.log_std_schedule(self._current_progress_remaining))
-
-        if hasattr(self.policy, "nn_critic") and self.policy.nn_critic and hasattr(self.policy, "value_optimizer"):
+        if isinstance(self.policy.action_dist, DiagGaussianDistribution):
+            update_learning_rate(self.policy.log_std_optimizer, self.policy.log_std_schedule(
+                self._current_progress_remaining))
+        if self.policy.nn_critic:
             self._update_learning_rate(self.policy.value_optimizer)
             self.logger.record("train/nn_critic", "True")
         else:
             self.logger.record("train/nn_critic", "False")
-
-        if hasattr(self.policy, "get_schedule_learning_rates"):
-            try:
-                policy_lr, value_lr = self.policy.get_schedule_learning_rates()
-                self.logger.record("train/policy_learning_rate", policy_lr)
-                self.logger.record("train/value_learning_rate", value_lr)
-            except Exception:
-                pass
+        policy_lr, value_lr = self.policy.get_schedule_learning_rates()
+        self.logger.record("train/policy_learning_rate", policy_lr)
+        self.logger.record("train/value_learning_rate", value_lr)
 
         entropy_losses = []
         policy_losses, value_losses = [], []
@@ -299,17 +291,16 @@ class SafePPO_GBRL(PPO_GBRL):
                 value_losses.append(value_loss.item())
 
                 # Optional Gaussian log_std optimization (guarded)
-                if hasattr(self.policy, "action_dist") and isinstance(self.policy.action_dist, DiagGaussianDistribution) \
-                   and not getattr(self, "fixed_std", False) \
-                   and hasattr(self.policy, "log_std") and hasattr(self.policy, "log_std_optimizer"):
-                    if getattr(self, "max_policy_grad_norm", None):
-                        th.nn.utils.clip_grad_norm_(self.policy.log_std, max_norm=self.max_policy_grad_norm, error_if_nonfinite=True)
-                    if self.policy.log_std.grad is not None:
-                        self.policy.log_std_optimizer.step()
-                        self.policy.log_std_optimizer.zero_grad()
-                        log_std_s.append(self.policy.log_std.detach().cpu().numpy())
-                    else:
-                        self.policy.log_std_optimizer.zero_grad()
+                if isinstance(self.policy.action_dist, DiagGaussianDistribution) and not self.fixed_std:
+                    if self.max_policy_grad_norm is not None and self.max_policy_grad_norm > 0.0:
+                        th.nn.utils.clip_grad_norm_(self.policy.log_std, max_norm=self.max_policy_grad_norm,
+                                                    error_if_nonfinite=True)
+                    self.policy.log_std_optimizer.step()
+                    log_std_grad = self.policy.log_std.grad.clone().detach().cpu().numpy()
+                    self.policy.log_std_optimizer.zero_grad()
+                    assert ~np.isnan(log_std_grad).any(), "nan in assigned grads"
+                    assert ~np.isinf(log_std_grad).any(), "infinity in assigned grads"
+                    log_std_s.append(self.policy.log_std.detach().cpu().numpy())
 
                 # Approx reverse KL for early stopping
                 with th.no_grad():
