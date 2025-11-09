@@ -455,10 +455,17 @@ class SafePPO_GBRL(PPO_GBRL):
                 action_masks = get_action_masks(env) if self.use_masking else None
                 actions, values, log_probs = self.policy(obs_tensor, action_masks=action_masks, requires_grad=False)
 
+            actions = actions.cpu().numpy()
             # Lyapunov safety layer
             # safe_action = _lyapunov_safety_projection(actions, a_baseline=...)
 
-            new_obs, rewards, dones, infos = env.step(actions.cpu().numpy())
+            # Rescale and perform action
+            clipped_actions = actions
+            # Clip the actions to avoid out of bound error
+            if isinstance(self.action_space, spaces.Box):
+                clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
+
+            new_obs, rewards, dones, infos = env.step(clipped_actions)
 
             self.num_timesteps += env.num_envs
 
@@ -466,6 +473,9 @@ class SafePPO_GBRL(PPO_GBRL):
             callback.update_locals(locals())
             if callback.on_step() is False:
                 return False
+
+            self._update_info_buffer(infos)
+            n_steps += 1
 
             if isinstance(self.action_space, spaces.Discrete):
                 # Reshape in case of discrete action
@@ -496,6 +506,14 @@ class SafePPO_GBRL(PPO_GBRL):
                         violations += 1
                     episode_costs[idx] = 0.0
                     episode_rewards[idx] = 0.0
+                    if (infos[idx].get("terminal_observation") is not None
+                            and infos[idx].get("TimeLimit.truncated", False)
+                    ):
+                        terminal_obs = infos[idx]["terminal_observation"] if self.is_categorical else \
+                            self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
+                        with th.no_grad():
+                            terminal_value = self.policy.predict_values(terminal_obs)[0]  # type: ignore[arg-type]
+                        rewards[idx] += self.gamma * terminal_value
 
             # Store data in the buffer
             kwargs = {}
@@ -506,9 +524,6 @@ class SafePPO_GBRL(PPO_GBRL):
 
             self._last_obs = new_obs
             self._last_episode_starts = dones
-
-            self._update_info_buffer(infos)
-            n_steps += 1
 
             if completed_costs:
                 self.logger.record("rollout/ep_cost_mean", np.mean(completed_costs))
@@ -522,7 +537,7 @@ class SafePPO_GBRL(PPO_GBRL):
         with th.no_grad():
             values = self.policy.predict_values(self._last_obs, requires_grad=False)
 
-        rollout_buffer.compute_returns_and_advantage(last_values=values.detach(),
+        rollout_buffer.compute_returns_and_advantage(last_values=values,
                                                      dones=self._last_episode_starts)
         callback.on_rollout_end()
         return True
