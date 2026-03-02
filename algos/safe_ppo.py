@@ -575,10 +575,16 @@ class SafePPO_GBRL(PPO_GBRL):
             #    return False
 
         with th.no_grad():
-            values = self.policy.predict_values(self._last_obs, requires_grad=False)
+            obs_tensor = self._last_obs if self.is_categorical else obs_as_tensor(self._last_obs, self.device)
+            last_values = self.policy.predict_values(obs_tensor, requires_grad=False)
+            last_cost_values = self.policy.predict_cost_values(obs_tensor, requires_grad=False)
 
-        rollout_buffer.compute_returns_and_advantage(last_values=values.detach(),
-                                                     dones=self._last_episode_starts)
+        rollout_buffer.compute_returns_and_advantage(
+            last_values=last_values,
+            last_cost_values=last_cost_values,
+            dones=self._last_episode_starts,
+        )
+
         callback.on_rollout_end()
         return True
 
