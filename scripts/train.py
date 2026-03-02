@@ -13,6 +13,8 @@ from pathlib import Path
 
 import safety_gymnasium
 
+from policies.actor_critic_safe_policy import ActorCriticSafePolicy
+
 ROOT_PATH = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT_PATH))
 
@@ -169,7 +171,22 @@ if __name__ == '__main__':
     algo_kwargs = process_policy_kwargs(args)
     print(f"Training with algo_kwargs: {algo_kwargs}")
 
-    algo = NAME_TO_ALGO[args.algo_type](env=env, tensorboard_log=tensorboard_log, _init_setup_model=True, **algo_kwargs)
+    if args.algo_type == "sppo_gbrl":
+        algo = NAME_TO_ALGO[args.algo_type](
+            policy=ActorCriticSafePolicy,
+            env=env,
+            tensorboard_log=tensorboard_log,
+            _init_setup_model=True,
+            **algo_kwargs,
+        )
+    else:
+        algo = NAME_TO_ALGO[args.algo_type](
+            env=env,
+            tensorboard_log=tensorboard_log,
+            _init_setup_model=True,
+            **algo_kwargs,
+        )
+    # algo = NAME_TO_ALGO[args.algo_type](env=env, tensorboard_log=tensorboard_log, _init_setup_model=True, **algo_kwargs)
 
     algo.learn(total_timesteps=args.total_n_steps, callback=callback, log_interval=args.log_interval,
                progress_bar=False, **learn_kwargs)

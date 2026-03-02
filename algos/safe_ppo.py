@@ -57,6 +57,12 @@ def _a_projection(policy_grad: th.Tensor,
     inner = th.dot(policy_grad, cost_grad)
     violation = cost_value - cost_threshold
     bnorm2 = th.dot(cost_grad, cost_grad) + eps
+
+    # skip projection if within constraints:
+    if violation <= 0.0:
+        return policy_grad
+
+    # actual theta-like projection
     lam = (inner - violation) / bnorm2
     lam = th.clamp(lam, min=0.0)
     return policy_grad - lam * cost_grad
@@ -88,10 +94,14 @@ class SafeRolloutBufferSamples(NamedTuple):
     returns: th.Tensor
     cost_advantages: th.Tensor
     cost_returns: th.Tensor
+    cost_values: th.Tensor
 
 class SafeRolloutBuffer(RolloutBuffer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.use_cost_gae = True
+        self.cost_gamma = self.gamma
+        self.cost_gae_lambda = self.gae_lambda
         self.costs = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.cost_values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.cost_advantages = None
@@ -107,7 +117,7 @@ class SafeRolloutBuffer(RolloutBuffer):
     def add(self, obs, action, reward, episode_start, value, log_prob, cost=0.0, cost_value=0.0):
         super().add(obs, action, reward, episode_start, value, log_prob)
         self.costs[self.pos-1] = cost  # offsets super().add(...) increment
-        self.cost_values[self.pos-1] = cost_value
+        self.cost_values[self.pos-1] = cost_value.detach().acpu().numpy().reshape(-1)
 
     def get(self, batch_size=None):
         indices = np.random.permutation(self.buffer_size * self.n_envs)
@@ -148,13 +158,37 @@ class SafeRolloutBuffer(RolloutBuffer):
                 cost_returns=cost_returns
             )
 
-    def compute_returns_and_advantage(self, last_values, dones):
+    def compute_returns_and_advantage(self, last_values, dones, last_cost_values, use_undisc_ep_cost=False):
         super().compute_returns_and_advantage(last_values, dones)
 
-        cost_tensor = th.tensor(self.costs, dtype=th.float32, device=self.device)
-        cost_values_tensor = th.tensor(self.cost_values, dtype=th.float32, device=self.device)
+        # episodic discount
+        last_gae_lam = 0.0
+        gamma_c = 1.0 if use_undisc_ep_cost else self.cost_gamma
+        lam_c = self.cost_gae_lambda
 
-        self.cost_advantages = cost_tensor - cost_values_tensor
+        for step in reversed(range(self.buffer_size)):
+            if step == self.buffer_size - 1:
+                next_non_terminal = 1.0 - dones.astype(np.float32)
+                next_values = last_cost_values
+            else:
+                next_non_terminal = 1.0 - self.episode_starts[step + 1].astype(np.float32)
+                next_values = self.cost_values[step + 1]
+
+            # TD residual for cost value
+            delta = self.costs[step] + gamma_c * next_values * next_non_terminal - self.cost_values[step]
+
+            if self.use_cost_gae:
+                last_gae_lam = delta + gamma_c * lam_c * next_non_terminal * last_gae_lam
+                self.cost_advantages[step] = last_gae_lam
+            else:
+                # One-step advantage
+                self.cost_advantages[step] = delta
+
+        cost_values_tensor = th.tensor(self.cost_values, dtype=th.float32, device=self.device)
+        #self.cost_returns = self.cost_advantages + self.cost_values
+        #cost_tensor = th.tensor(self.costs, dtype=th.float32, device=self.device)
+        #self.cost_advantages = cost_tensor - cost_values_tensor
+
         self.cost_returns = self.cost_advantages + cost_values_tensor
 
 class SafePPO_GBRL(PPO_GBRL):
@@ -166,9 +200,30 @@ class SafePPO_GBRL(PPO_GBRL):
         self.cost_threshold: float = float(kwargs.pop("cost_threshold", 25.0)) # https://arxiv.org/html/2409.01245v1
         self.use_safety_projection: bool = bool(kwargs.pop("use_safety_projection", True))
         self.cost_value_source = kwargs.pop("cost_value_source", None)
+        self.cost_vf_coef = self.vf_coef # could be its own arg with float(kwargs.pop("cost_vf_coef", 0.5))
 
         # delay setup
         kwargs["_init_setup_model"] = False
+
+        #constraint critic specifics pre setup
+        policy_kwargs = kwargs.get("policy_kwargs", None)
+        if policy_kwargs is None:
+            policy_kwargs = {}
+            kwargs["policy_kwargs"] = policy_kwargs
+        policy_kwargs["constraint_critic"] = True
+
+        #use value optimizer for cost critic
+        tree_opt = policy_kwargs.get(["tree_optimizer"], None)
+        if tree_opt is not None:
+            if "cost_value_optimizer" not in tree_opt:
+                if "value_optimizer" in tree_opt:
+                    tree_opt["cost_value_optimizer"] = dict(tree_opt["value_optimizer"])
+                else:
+                    tree_opt["cost_value_optimizer"] = dict(tree_opt["policy_optimizer"])
+            T = tree_opt["policy_optimizer"].get("T", None)
+            if T is not None and "T" not in tree_opt["cost_value_optimizer"]:
+                tree_opt["cost_value_optimizer"]["T"] = T
+
         super().__init__(*args, **kwargs)
         self.rollout_buffer_class = SafeRolloutBuffer
         self.ppo_setup_model()
@@ -198,9 +253,13 @@ class SafePPO_GBRL(PPO_GBRL):
         self.logger.record("train/policy_learning_rate", policy_lr)
         self.logger.record("train/value_learning_rate", value_lr)
 
+        # cost critic learning rate logs
+        if hasattr(self.policy, "get_cost_schedule_learning_rate"):
+            self.logger.record("train/cost_value_learning_rate", self.policy.get_cost_schedule_learning_rate())
+
         entropy_losses = []
         policy_losses, value_losses = [], []
-        cost_losses = []
+        cost_value_losses = []
         clip_fractions = []
         approx_kl_divs = []
         theta_maxs, theta_mins = [], []
@@ -241,7 +300,13 @@ class SafePPO_GBRL(PPO_GBRL):
                 value_loss = 0.5 * F.mse_loss(rollout_data.returns, values_pred)
 
                 entropy_loss = -th.mean(entropy) if entropy is not None else -th.mean(-log_prob)
-                loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+
+                #cost critic
+                cost_values_pred = self.policy.predict_cost_values(rollout_data.observations, requires_grad=True)
+                cost_values_pred = cost_values_pred.view_as(rollout_data.cost_returns)
+                cost_value_loss = 0.5 * F.mse_loss(rollout_data.cost_returns, cost_values_pred)
+
+                loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss + self.cost_vf_coef * cost_value_loss
 
                 if hasattr(self.policy, "nn_critic") and self.policy.nn_critic and hasattr(self.policy, "value_optimizer"):
                     self.policy.value_optimizer.zero_grad()
@@ -274,7 +339,7 @@ class SafePPO_GBRL(PPO_GBRL):
                         g = _flatten_grads(policy_params)
                         self.policy.zero_grad()
                         cost_loss.backward()
-                        b = _flatten_grads(self.policy.parameters())
+                        b = _flatten_grads(policy_params)
 
                         cost_value = float(getattr(self, "current_cost_estimate", rollout_data.cost_advantages.mean().item()))
                         g_safe = _a_projection(g, b, cost_value, self.cost_threshold)
@@ -289,6 +354,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 entropy_losses.append(entropy_loss.item())
                 policy_losses.append(policy_loss.item())
                 value_losses.append(value_loss.item())
+                cost_value_losses.append(cost_value_loss.item())
 
                 # Optional Gaussian log_std optimization (guarded)
                 if isinstance(self.policy.action_dist, DiagGaussianDistribution) and not self.fixed_std:
@@ -315,6 +381,9 @@ class SafePPO_GBRL(PPO_GBRL):
                 # Fit GBRL models on the grads currently in .grad
                 print(f"Current params, grads: {self.policy.get_params()}")
                 self.policy.step(policy_grad_clip=self.max_policy_grad_norm, value_grad_clip=self.max_value_grad_norm)
+
+                # Fit constraint critic
+                self.policy.cost_critic_step(observations=rollout_data.observations, cost_value_grad_clip=self.max_value_grad_norm)
                 params, grads = self.policy.get_params()
                 if isinstance(grads, tuple):
                     theta_grad, values_grad = grads
@@ -431,6 +500,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 obs_tensor = self._last_obs if self.is_categorical else obs_as_tensor(self._last_obs, self.device)
                 action_masks = get_action_masks(env) if self.use_masking else None
                 actions, values, log_probs = self.policy(obs_tensor, action_masks=action_masks, requires_grad=False)
+                cost_values = self.policy.predict_cost_values(obs_tensor, requires_grad=False)
 
             actions = actions.cpu().numpy()
             # Lyapunov safety layer
