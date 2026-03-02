@@ -205,15 +205,8 @@ class SafePPO_GBRL(PPO_GBRL):
         # delay setup
         kwargs["_init_setup_model"] = False
 
-        #constraint critic specifics pre setup
-        policy_kwargs = kwargs.get("policy_kwargs", None)
-        if policy_kwargs is None:
-            policy_kwargs = {}
-            kwargs["policy_kwargs"] = policy_kwargs
-        policy_kwargs["constraint_critic"] = True
-
         #use value optimizer for cost critic
-        tree_opt = policy_kwargs.get("tree_optimizer", None)
+        tree_opt = kwargs.get("tree_optimizer", None)
         if tree_opt is not None:
             if "cost_value_optimizer" not in tree_opt:
                 if "value_optimizer" in tree_opt:
