@@ -117,7 +117,7 @@ class SafeRolloutBuffer(RolloutBuffer):
     def add(self, obs, action, reward, episode_start, value, log_prob, cost=0.0, cost_value=0.0):
         super().add(obs, action, reward, episode_start, value, log_prob)
         self.costs[self.pos-1] = cost  # offsets super().add(...) increment
-        self.cost_values[self.pos-1] = cost_value.detach().acpu().numpy().reshape(-1)
+        self.cost_values[self.pos-1] = cost_value
 
     def get(self, batch_size=None):
         indices = np.random.permutation(self.buffer_size * self.n_envs)
