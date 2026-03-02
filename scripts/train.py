@@ -13,8 +13,6 @@ from pathlib import Path
 
 import safety_gymnasium
 
-from policies.actor_critic_safe_policy import ActorCriticSafePolicy
-
 ROOT_PATH = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT_PATH))
 
@@ -48,6 +46,8 @@ from algos.ppo import PPO_GBRL
 from algos.sac import SAC_GBRL
 from algos.safe_ppo import SafePPO_GBRL
 from config.args import parse_args, process_logging, process_policy_kwargs
+
+from policies.actor_critic_safe_policy import ActorCriticSafePolicy
 
 NAME_TO_ALGO = {'ppo_gbrl': PPO_GBRL, 'a2c_gbrl': A2C_GBRL, 'sac_gbrl': SAC_GBRL, 'awr_gbrl': AWR_GBRL,
                 'ppo_nn': PPO, 'a2c_nn': A2C, 'dqn_gbrl': DQN_GBRL, 'awr_nn': AWR, 'dqn_nn': DQN, 'sppo_gbrl': SafePPO_GBRL}
