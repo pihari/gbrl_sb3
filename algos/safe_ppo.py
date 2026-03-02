@@ -161,35 +161,33 @@ class SafeRolloutBuffer(RolloutBuffer):
     def compute_returns_and_advantage(self, last_values, dones, last_cost_values, use_undisc_ep_cost=False):
         super().compute_returns_and_advantage(last_values, dones)
 
+        costs = th.tensor(self.costs, dtype=th.float32, device=self.device)
+        cost_values = th.tensor(self.cost_values, dtype=th.float32, device=self.device)
+        last_cost_values = last_cost_values.detach().view(1, -1)
+
+        adv_c = th.zeros_like(costs)
+        last_gae = th.zeros((self.n_envs,), dtype=th.float32, device=self.device)
+
+        dones_t = th.tensor(dones, dtype=th.float32, device=self.device)
+
         # episodic discount
-        last_gae_lam = 0.0
         gamma_c = 1.0 if use_undisc_ep_cost else self.cost_gamma
         lam_c = self.cost_gae_lambda
 
         for step in reversed(range(self.buffer_size)):
             if step == self.buffer_size - 1:
-                next_non_terminal = 1.0 - dones.astype(np.float32)
-                next_values = last_cost_values
+                next_non_terminal = 1.0 - dones_t
+                next_values = last_cost_values.squeeze(0)
             else:
-                next_non_terminal = 1.0 - self.episode_starts[step + 1].astype(np.float32)
-                next_values = self.cost_values[step + 1]
+                next_non_terminal = 1.0 - th.tensor(self.episode_starts[step + 1], dtype=th.float32, device=self.device)
+                next_values = cost_values[step + 1]
 
-            # TD residual for cost value
-            delta = self.costs[step] + gamma_c * next_values * next_non_terminal - self.cost_values[step]
+            delta = costs[step] + gamma_c * next_values * next_non_terminal - cost_values[step]
+            last_gae = delta + gamma_c * lam_c * next_non_terminal * last_gae
+            adv_c[step] = last_gae
 
-            if self.use_cost_gae:
-                last_gae_lam = delta + gamma_c * lam_c * next_non_terminal * last_gae_lam
-                self.cost_advantages[step] = last_gae_lam
-            else:
-                # One-step advantage
-                self.cost_advantages[step] = delta
-
-        cost_values_tensor = th.tensor(self.cost_values, dtype=th.float32, device=self.device)
-        #self.cost_returns = self.cost_advantages + self.cost_values
-        #cost_tensor = th.tensor(self.costs, dtype=th.float32, device=self.device)
-        #self.cost_advantages = cost_tensor - cost_values_tensor
-
-        self.cost_returns = self.cost_advantages + cost_values_tensor
+        self.cost_advantages = adv_c
+        self.cost_returns = adv_c + cost_values
 
 class SafePPO_GBRL(PPO_GBRL):
     """
