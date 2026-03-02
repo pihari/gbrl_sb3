@@ -200,7 +200,7 @@ class SafePPO_GBRL(PPO_GBRL):
         self.cost_threshold: float = float(kwargs.pop("cost_threshold", 25.0)) # https://arxiv.org/html/2409.01245v1
         self.use_safety_projection: bool = bool(kwargs.pop("use_safety_projection", True))
         self.cost_value_source = kwargs.pop("cost_value_source", None)
-        self.cost_vf_coef = self.vf_coef # could be its own arg with float(kwargs.pop("cost_vf_coef", 0.5))
+        self.cost_vf_coef = 0.5  # could be its own input arg with float(kwargs.pop("cost_vf_coef", 0.5))
 
         # delay setup
         kwargs["_init_setup_model"] = False
