@@ -213,7 +213,7 @@ class SafePPO_GBRL(PPO_GBRL):
         policy_kwargs["constraint_critic"] = True
 
         #use value optimizer for cost critic
-        tree_opt = policy_kwargs.get(["tree_optimizer"], None)
+        tree_opt = policy_kwargs.get("tree_optimizer", None)
         if tree_opt is not None:
             if "cost_value_optimizer" not in tree_opt:
                 if "value_optimizer" in tree_opt:
