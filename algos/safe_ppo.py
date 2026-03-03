@@ -333,17 +333,20 @@ class SafePPO_GBRL(PPO_GBRL):
                     policy_params = [p for p in self.policy.parameters() if p.requires_grad]
                     #print(f"Cost Loss: {cost_loss} ------ Policy params: {policy_params}")
                     if len(policy_params) > 0:
-                        #cost_grads = th.autograd.grad(cost_loss, policy_params, retain_graph=True, allow_unused=True)
-
                         g = _flatten_grads(policy_params)
-                        self.policy.zero_grad()
+
+                        # Only zero policy params, not value params
+                        for p in policy_params:
+                            if p.grad is not None:
+                                p.grad.zero_()
+
                         cost_loss.backward()
                         b = _flatten_grads(policy_params)
 
-                        exp_ep_cost = float(getattr(self, "current_cost_estimate", rollout_data.cost_returns.mean().item()))
+                        exp_ep_cost = float(
+                            getattr(self, "current_cost_estimate", rollout_data.cost_returns.mean().item()))
                         g_safe = _theta_projection(g, b, exp_ep_cost, self.cost_threshold)
                         _write_back_grads(policy_params, g_safe)
-                        #self.policy.step(policy_grad_clip=self.max_policy_grad_norm)
 
                     # cost_losses.append(cost_loss.item())
 
