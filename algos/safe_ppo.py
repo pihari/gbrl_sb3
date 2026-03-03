@@ -43,14 +43,14 @@ def _write_back_grads(params, flat: th.Tensor):
         p.grad.copy_(flat[offset:offset + n].view_as(p))
         offset += n
 
-def _a_projection(policy_grad: th.Tensor,
-                  cost_grad: th.Tensor,
-                  cost_value: float,
-                  cost_threshold: float,
-                  eps: float = 1e-10) -> th.Tensor:
+def _theta_projection(policy_grad: th.Tensor,
+                      cost_grad: th.Tensor,
+                      cost_value: float,
+                      cost_threshold: float,
+                      eps: float = 1e-10) -> th.Tensor:
     """
     closer to theta-projection
-    g* = g - λ* b,  λ* = max(0, (<g,b> - (c - d)) / ||b||^2)
+    g* = g - λ* b,  λ* = max(0, (<g,b> - (d - c)) / ||b||^2)
     """
     if policy_grad.numel() == 0 or cost_grad.numel() == 0:
         return policy_grad
@@ -63,7 +63,7 @@ def _a_projection(policy_grad: th.Tensor,
         return policy_grad
 
     # actual theta-like projection
-    lam = (inner - violation) / bnorm2
+    lam = (inner + violation) / bnorm2
     lam = th.clamp(lam, min=0.0)
     return policy_grad - lam * cost_grad
 
@@ -135,7 +135,7 @@ class SafeRolloutBuffer(RolloutBuffer):
             self.cost_advantages = self.cost_advantages.reshape(-1)
             self.generator_ready = True
 
-        for start_idx in range(0, self.buffer_size, batch_size or self.buffer_size):
+        for start_idx in range(0, self.buffer_size * self.n_envs, batch_size or self.buffer_size):
             batch_indices = indices[start_idx: start_idx + (batch_size or self.buffer_size)]
 
             observations = th.tensor(self.observations[batch_indices], dtype=th.float32, device=self.device)
@@ -146,6 +146,7 @@ class SafeRolloutBuffer(RolloutBuffer):
             returns = th.tensor(self.returns[batch_indices], dtype=th.float32, device=self.device)
             cost_advantages = th.tensor(self.cost_advantages[batch_indices], dtype=th.float32, device=self.device)
             cost_returns = th.tensor(self.cost_returns[batch_indices], dtype=th.float32, device=self.device)
+            old_cost_values = th.Tensor(self.cost_values[batch_indices], dtype=th.float32, device=self.device)
 
             yield SafeRolloutBufferSamples(
                 observations=observations,
@@ -155,7 +156,8 @@ class SafeRolloutBuffer(RolloutBuffer):
                 advantages=advantages,
                 returns=returns,
                 cost_advantages=cost_advantages,
-                cost_returns=cost_returns
+                cost_returns=cost_returns,
+                old_cost_values=old_cost_values
             )
 
     def compute_returns_and_advantage(self, last_values, dones, last_cost_values, use_undisc_ep_cost=False):
@@ -258,7 +260,7 @@ class SafePPO_GBRL(PPO_GBRL):
         values_maxs, values_mins = [], []
         values_grad_maxs, values_grad_mins = [], []
         log_std_s = []
-        all_cost_advantages = []
+        all_cost_returns = []
 
         continue_training = True
 
@@ -302,13 +304,14 @@ class SafePPO_GBRL(PPO_GBRL):
                 if hasattr(self.policy, "nn_critic") and self.policy.nn_critic and hasattr(self.policy, "value_optimizer"):
                     self.policy.value_optimizer.zero_grad()
 
-                self.use_safety_projection = e > 0.2 * self.n_epochs
+                cold_start_threshold = e > 0.2 * self.n_epochs
                 # only retain graph if safety part needs it
-                loss.backward(retain_graph=self.use_safety_projection)
+                loss.backward(retain_graph=self.use_safety_projection and cold_start_threshold)
 
                 # The safety projection part
                 use_safety = (
                     self.use_safety_projection
+                    and cold_start_threshold
                     and hasattr(rollout_data, "cost_advantages")
                     and (rollout_data.cost_advantages is not None)
                 )
@@ -332,9 +335,9 @@ class SafePPO_GBRL(PPO_GBRL):
                         cost_loss.backward()
                         b = _flatten_grads(policy_params)
 
-                        cost_value = float(getattr(self, "current_cost_estimate", rollout_data.cost_advantages.mean().item()))
-                        g_safe = _a_projection(g, b, cost_value, self.cost_threshold)
-                        _write_back_grads(self.policy.parameters(), g_safe)
+                        exp_ep_cost = float(getattr(self, "current_cost_estimate", rollout_data.cost_returns.mean().item()))
+                        g_safe = _theta_projection(g, b, exp_ep_cost, self.cost_threshold)
+                        _write_back_grads(policy_params, g_safe)
                         #self.policy.step(policy_grad_clip=self.max_policy_grad_norm)
 
                     # cost_losses.append(cost_loss.item())
@@ -378,14 +381,14 @@ class SafePPO_GBRL(PPO_GBRL):
                 params, grads = self.policy.get_params()
                 if isinstance(grads, tuple):
                     theta_grad, values_grad = grads
-                    theta, values = params
+                    theta, values_params = params
                     values_grad_maxs.append(values_grad.max().item())
                     values_grad_mins.append(values_grad.min().item())
+                    values_maxs.append(values_params.max().item())
+                    values_mins.append(values_params.min().item())
                 else:
                     theta_grad = grads
                     theta = params
-                values_maxs.append(values.max().item())
-                values_mins.append(values.min().item())
 
                 theta_maxs.append(theta.max().item())
                 theta_mins.append(theta.min().item())
@@ -396,10 +399,10 @@ class SafePPO_GBRL(PPO_GBRL):
                 clip_fraction = th.mean((th.abs(ratio - 1) > clip_range).float()).item()
                 clip_fractions.append(clip_fraction)
 
-                all_cost_advantages.append(rollout_data.cost_advantages)
+                all_cost_returns.append(rollout_data.cost_returns)
 
             with th.no_grad():
-                self.current_cost_estimate = th.cat(all_cost_advantages).mean().item()
+                self.current_cost_estimate = th.cat(all_cost_returns).mean().item()
 
             if not continue_training:
                 break
