@@ -146,7 +146,7 @@ class SafeRolloutBuffer(RolloutBuffer):
             returns = th.tensor(self.returns[batch_indices], dtype=th.float32, device=self.device)
             cost_advantages = th.tensor(self.cost_advantages[batch_indices], dtype=th.float32, device=self.device)
             cost_returns = th.tensor(self.cost_returns[batch_indices], dtype=th.float32, device=self.device)
-            old_cost_values = th.Tensor(self.cost_values[batch_indices], dtype=th.float32, device=self.device)
+            old_cost_values = th.tensor(self.cost_values[batch_indices], dtype=th.float32, device=self.device)
 
             yield SafeRolloutBufferSamples(
                 observations=observations,
@@ -157,7 +157,7 @@ class SafeRolloutBuffer(RolloutBuffer):
                 returns=returns,
                 cost_advantages=cost_advantages,
                 cost_returns=cost_returns,
-                old_cost_values=old_cost_values
+                cost_values=old_cost_values
             )
 
     def compute_returns_and_advantage(self, last_values, dones, last_cost_values, use_undisc_ep_cost=False):
@@ -265,6 +265,7 @@ class SafePPO_GBRL(PPO_GBRL):
         continue_training = True
 
         for e in range(self.n_epochs):
+            all_cost_returns = [] # reset per episode needed
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 actions = rollout_data.actions
                 action_masks = None if not getattr(self, "use_masking", False) else getattr(rollout_data, "action_masks", None)
@@ -561,7 +562,7 @@ class SafePPO_GBRL(PPO_GBRL):
             if self.use_masking:
                 kwargs['action_masks'] = action_masks
             rollout_buffer.add(self._last_obs, actions, rewards, self._last_episode_starts,
-                               values, log_probs, costs, cost_value=0.0, **kwargs)
+                               values, log_probs, costs, cost_value=cost_values, **kwargs)
 
             self._last_obs = new_obs
             self._last_episode_starts = dones
