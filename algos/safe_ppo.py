@@ -407,7 +407,8 @@ class SafePPO_GBRL(PPO_GBRL):
                 all_cost_returns.append(rollout_data.cost_returns)
 
             with th.no_grad():
-                self.current_cost_estimate = th.cat(all_cost_returns).mean().item()
+                if all_cost_returns: # prevent crash on early stopping
+                    self.current_cost_estimate = th.cat(all_cost_returns).mean().item()
 
             if not continue_training:
                 break
