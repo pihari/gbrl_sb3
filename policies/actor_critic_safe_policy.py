@@ -28,10 +28,10 @@ class ActorCriticSafePolicy(ActorCriticPolicy):
         self._base_tree_struct = None
         self._base_tree_optimizer = None
 
-        super().__init__(*args, **kwargs)
-
         tree_struct = kwargs.get("tree_struct", None)
         tree_optimizer = kwargs.get("tree_optimizer", None)
+
+        super().__init__(*args, **kwargs)
 
         if tree_struct is None or tree_optimizer is None:
             raise ValueError(
@@ -87,10 +87,10 @@ class ActorCriticSafePolicy(ActorCriticPolicy):
             device=device,
         )
 
-    def predict_cost_values(self, obs: Union[th.Tensor, np.ndarray], requires_grad: bool = True) -> th.Tensor:
+    def predict_cost_values(self, obs, requires_grad=True):
+        if not isinstance(obs, th.Tensor):
+            obs = th.tensor(obs, dtype=th.float32, device=self.device)
         if self.cost_value_model is None:
-            if not isinstance(obs, th.Tensor):
-                obs = th.tensor(obs, device=self.device)
             return th.zeros((obs.shape[0], 1), device=obs.device, dtype=th.float32)
         return self.cost_value_model(obs, requires_grad, tensor=True)
 
