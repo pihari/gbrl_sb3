@@ -299,11 +299,6 @@ class SafePPO_GBRL(PPO_GBRL):
 
                 entropy_loss = -th.mean(entropy) if entropy is not None else -th.mean(-log_prob)
 
-                #cost critic
-                cost_values_pred = self.policy.predict_cost_values(rollout_data.observations, requires_grad=True)
-                cost_values_pred = cost_values_pred.view_as(rollout_data.cost_returns)
-                cost_value_loss = 0.5 * F.mse_loss(rollout_data.cost_returns, cost_values_pred)
-
                 loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
 
                 if hasattr(self.policy, "nn_critic") and self.policy.nn_critic and hasattr(self.policy, "value_optimizer"):
@@ -356,7 +351,6 @@ class SafePPO_GBRL(PPO_GBRL):
                 entropy_losses.append(entropy_loss.item())
                 policy_losses.append(policy_loss.item())
                 value_losses.append(value_loss.item())
-                cost_value_losses.append(cost_value_loss.item())
 
                 # Optional Gaussian log_std optimization (guarded)
                 if isinstance(self.policy.action_dist, DiagGaussianDistribution) and not self.fixed_std:
@@ -383,6 +377,15 @@ class SafePPO_GBRL(PPO_GBRL):
                 # Fit GBRL models on the grads currently in .grad
                 #print(f"Current params, grads: {self.policy.get_params()}")
                 self.policy.step(policy_grad_clip=self.max_policy_grad_norm, value_grad_clip=self.max_value_grad_norm)
+
+                # Dedicated cost critic backward pass
+                cost_values_pred = self.policy.predict_cost_values(
+                    rollout_data.observations, requires_grad=True
+                )
+                cost_values_pred = cost_values_pred.view_as(rollout_data.cost_returns)
+                cost_value_loss = 0.5 * F.mse_loss(rollout_data.cost_returns, cost_values_pred)
+                cost_value_loss.backward()
+                cost_value_losses.append(cost_value_loss.item())  # logging still works
 
                 # Fit constraint critic
                 self.policy.cost_critic_step(observations=rollout_data.observations, cost_value_grad_clip=self.max_value_grad_norm)
