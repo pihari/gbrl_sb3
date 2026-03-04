@@ -285,8 +285,30 @@ class SafePPO_GBRL(PPO_GBRL):
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
                 ratio = th.exp(log_prob - rollout_data.old_log_prob)
-                policy_loss_1 = advantages * ratio
-                policy_loss_2 = advantages * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                # Per-sample functional gradients
+                g_func = advantages * ratio
+                cold_start_threshold = e > 0.2 * self.n_epochs
+                use_safety = (
+                        self.use_safety_projection
+                        and cold_start_threshold
+                        and rollout_data.cost_advantages is not None
+                )
+                if use_safety:
+                    b_func = rollout_data.cost_advantages.view_as(g_func)
+                    exp_ep_cost = float(getattr(self, "current_cost_estimate",
+                                                rollout_data.cost_returns.mean().item()))
+                    violation = exp_ep_cost - self.cost_threshold
+                    if violation > 0:
+                        inner_F = (g_func * b_func).mean()
+                        bnorm2_F = (b_func * b_func).mean() + 1e-10
+                        lam = th.clamp((inner_F + violation) / bnorm2_F, min=0.0)
+                        g_func = g_func - lam * b_func
+
+                # Build policy loss from (projected) per-sample targets
+                policy_loss_1 = g_func
+                policy_loss_2 = th.clamp(g_func,
+                                         advantages * (1 - clip_range),
+                                         advantages * (1 + clip_range))
                 policy_loss = -th.min(policy_loss_1, policy_loss_2).mean()
 
                 if self.clip_range_vf is None:
@@ -299,51 +321,15 @@ class SafePPO_GBRL(PPO_GBRL):
 
                 entropy_loss = -th.mean(entropy) if entropy is not None else -th.mean(-log_prob)
 
+                # Combined loss — identical structure to base PPO, no cost term
                 loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
 
-                if hasattr(self.policy, "nn_critic") and self.policy.nn_critic and hasattr(self.policy, "value_optimizer"):
+                if hasattr(self.policy, "nn_critic") and self.policy.nn_critic and hasattr(self.policy,
+                                                                                           "value_optimizer"):
                     self.policy.value_optimizer.zero_grad()
 
-                cold_start_threshold = e > 0.2 * self.n_epochs
-                # only retain graph if safety part needs it
-                loss.backward(retain_graph=self.use_safety_projection and cold_start_threshold)
-
-                # The safety projection part
-                use_safety = (
-                    self.use_safety_projection
-                    and cold_start_threshold
-                    and hasattr(rollout_data, "cost_advantages")
-                    and (rollout_data.cost_advantages is not None)
-                )
-                if use_safety:
-                    _, log_prob_cost, _ = self.policy.evaluate_actions(
-                        rollout_data.observations, actions, action_masks=action_masks
-                    )
-                    A_cost = rollout_data.cost_advantages.to(log_prob_cost.device)
-                    if A_cost.shape != log_prob_cost.shape:
-                        A_cost = A_cost.view_as(log_prob_cost)
-
-                    cost_loss = -(log_prob_cost * A_cost).mean()
-
-                    policy_params = [p for p in self.policy.parameters() if p.requires_grad]
-                    #print(f"Cost Loss: {cost_loss} ------ Policy params: {policy_params}")
-                    if len(policy_params) > 0:
-                        g = _flatten_grads(policy_params)
-
-                        # Only zero policy params, not value params
-                        for p in policy_params:
-                            if p.grad is not None:
-                                p.grad.zero_()
-
-                        cost_loss.backward()
-                        b = _flatten_grads(policy_params)
-
-                        exp_ep_cost = float(
-                            getattr(self, "current_cost_estimate", rollout_data.cost_returns.mean().item()))
-                        g_safe = _theta_projection(g, b, exp_ep_cost, self.cost_threshold)
-                        _write_back_grads(policy_params, g_safe)
-
-                    # cost_losses.append(cost_loss.item())
+                # Single backward — populates both params[0].grad and params[1].grad correctly
+                loss.backward()
 
                 if hasattr(self.policy, "nn_critic") and self.policy.nn_critic:
                     th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
@@ -375,20 +361,23 @@ class SafePPO_GBRL(PPO_GBRL):
                     break
 
                 # Fit GBRL models on the grads currently in .grad
-                #print(f"Current params, grads: {self.policy.get_params()}")
-                self.policy.step(policy_grad_clip=self.max_policy_grad_norm, value_grad_clip=self.max_value_grad_norm)
+                    # Fit GBRL policy+value — grads are intact
+                    self.policy.step(policy_grad_clip=self.max_policy_grad_norm,
+                                     value_grad_clip=self.max_value_grad_norm)
 
-                # Dedicated cost critic backward pass
-                cost_values_pred = self.policy.predict_cost_values(
-                    rollout_data.observations, requires_grad=True
-                )
-                cost_values_pred = cost_values_pred.view_as(rollout_data.cost_returns)
-                cost_value_loss = 0.5 * F.mse_loss(rollout_data.cost_returns, cost_values_pred)
-                cost_value_loss.backward()
-                cost_value_losses.append(cost_value_loss.item())  # logging still works
+                    # Cost critic: isolated forward → backward → step cycle
+                    cost_values_pred = self.policy.predict_cost_values(
+                        rollout_data.observations, requires_grad=True
+                    )
+                    cost_values_pred = cost_values_pred.view_as(rollout_data.cost_returns)
+                    cost_value_loss = 0.5 * F.mse_loss(rollout_data.cost_returns, cost_values_pred)
+                    cost_value_loss.backward()
+                    cost_value_losses.append(cost_value_loss.item())
+                    self.policy.cost_critic_step(
+                        observations=rollout_data.observations,
+                        cost_value_grad_clip=self.max_value_grad_norm
+                    )
 
-                # Fit constraint critic
-                self.policy.cost_critic_step(observations=rollout_data.observations, cost_value_grad_clip=self.max_value_grad_norm)
                 params, grads = self.policy.get_params()
                 if isinstance(grads, tuple):
                     theta_grad, values_grad = grads
