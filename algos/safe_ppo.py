@@ -390,10 +390,12 @@ class SafePPO_GBRL(PPO_GBRL):
                     theta_grad = grads
                     theta = params
 
-                theta_maxs.append(theta.max().item())
-                theta_mins.append(theta.min().item())
-                theta_grad_maxs.append(theta_grad.max().item())
-                theta_grad_mins.append(theta_grad.min().item())
+                if theta is not None:
+                    theta_maxs.append(theta.max().item())
+                    theta_mins.append(theta.min().item())
+                if theta_grad is not None:
+                    theta_grad_maxs.append(theta_grad.max().item())
+                    theta_grad_mins.append(theta_grad.min().item())
 
                 self._n_updates += 1
                 clip_fraction = th.mean((th.abs(ratio - 1) > clip_range).float()).item()
