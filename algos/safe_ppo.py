@@ -469,6 +469,9 @@ class SafePPO_GBRL(PPO_GBRL):
         if self.clip_range_vf is not None:
             self.logger.record("train/clip_range_vf", clip_range_vf)
 
+        # dumping logger for test run with few steps
+        self.logger.dump(self.num_timesteps)
+
 
     def collect_rollouts(self,
                          env: VecEnv,
