@@ -284,9 +284,11 @@ class SafePPO_GBRL(PPO_GBRL):
                 if getattr(self, "normalize_advantage", True) and len(advantages) > 1:
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-                ratio = th.exp(log_prob - rollout_data.old_log_prob)
+                advantages = advantages.view(-1)
+                log_prob = log_prob.view(-1)
+                ratio = th.exp(log_prob - rollout_data.old_log_prob.view(-1))
                 # Per-sample functional gradients
-                g_func = (advantages * ratio).view(-1) # this flattens the g
+                g_func = advantages * ratio # this flattens the g
                 cold_start_threshold = e > 0.2 * self.n_epochs
                 use_safety = (
                         self.use_safety_projection
