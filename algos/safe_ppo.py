@@ -379,6 +379,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 )
 
                 params, grads = self.policy.get_params()
+                print(f"DEBUG get_params: params type={type(params)}, grads type={type(grads)}, params={params}, grads={grads}")
                 if isinstance(grads, tuple):
                     theta_grad, values_grad = grads
                     theta, values_params = params
