@@ -286,7 +286,7 @@ class SafePPO_GBRL(PPO_GBRL):
 
                 ratio = th.exp(log_prob - rollout_data.old_log_prob)
                 # Per-sample functional gradients
-                g_func = advantages * ratio
+                g_func = (advantages * ratio).view(-1) # this flattens the g
                 cold_start_threshold = e > 0.2 * self.n_epochs
                 use_safety = (
                         self.use_safety_projection
@@ -294,7 +294,7 @@ class SafePPO_GBRL(PPO_GBRL):
                         and rollout_data.cost_advantages is not None
                 )
                 if use_safety:
-                    b_func = rollout_data.cost_advantages.view_as(g_func)
+                    b_func = rollout_data.cost_advantages.view(-1) # this flattens the b
                     exp_ep_cost = float(getattr(self, "current_cost_estimate",
                                                 rollout_data.cost_returns.mean().item()))
                     violation = exp_ep_cost - self.cost_threshold
@@ -359,22 +359,22 @@ class SafePPO_GBRL(PPO_GBRL):
                     break
 
                 # Fit GBRL models on the grads currently in .grad
-                    # Fit GBRL policy+value — grads are intact
-                    self.policy.step(policy_grad_clip=self.max_policy_grad_norm,
-                                     value_grad_clip=self.max_value_grad_norm)
+                # Fit GBRL policy+value — grads are intact
+                self.policy.step(policy_grad_clip=self.max_policy_grad_norm,
+                                 value_grad_clip=self.max_value_grad_norm)
 
-                    # Cost critic: isolated forward → backward → step cycle
-                    cost_values_pred = self.policy.predict_cost_values(
-                        rollout_data.observations, requires_grad=True
-                    )
-                    cost_values_pred = cost_values_pred.view_as(rollout_data.cost_returns)
-                    cost_value_loss = 0.5 * F.mse_loss(rollout_data.cost_returns, cost_values_pred)
-                    cost_value_loss.backward()
-                    cost_value_losses.append(cost_value_loss.item())
-                    self.policy.cost_critic_step(
-                        observations=rollout_data.observations,
-                        cost_value_grad_clip=self.max_value_grad_norm
-                    )
+                # Cost critic: isolated forward → backward → step cycle
+                cost_values_pred = self.policy.predict_cost_values(
+                    rollout_data.observations, requires_grad=True
+                )
+                cost_values_pred = cost_values_pred.view_as(rollout_data.cost_returns)
+                cost_value_loss = 0.5 * F.mse_loss(rollout_data.cost_returns, cost_values_pred)
+                cost_value_loss.backward()
+                cost_value_losses.append(cost_value_loss.item())
+                self.policy.cost_critic_step(
+                    observations=rollout_data.observations,
+                    cost_value_grad_clip=self.max_value_grad_norm
+                )
 
                 params, grads = self.policy.get_params()
                 if isinstance(grads, tuple):
