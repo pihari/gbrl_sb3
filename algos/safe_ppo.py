@@ -304,7 +304,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 cost_values_pred = cost_values_pred.view_as(rollout_data.cost_returns)
                 cost_value_loss = 0.5 * F.mse_loss(rollout_data.cost_returns, cost_values_pred)
 
-                loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss + self.cost_vf_coef * cost_value_loss
+                loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
 
                 if hasattr(self.policy, "nn_critic") and self.policy.nn_critic and hasattr(self.policy, "value_optimizer"):
                     self.policy.value_optimizer.zero_grad()
