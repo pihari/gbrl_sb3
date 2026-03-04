@@ -306,9 +306,7 @@ class SafePPO_GBRL(PPO_GBRL):
 
                 # Build policy loss from (projected) per-sample targets
                 policy_loss_1 = g_func
-                policy_loss_2 = th.clamp(g_func,
-                                         advantages * (1 - clip_range),
-                                         advantages * (1 + clip_range))
+                policy_loss_2 = advantages * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 policy_loss = -th.min(policy_loss_1, policy_loss_2).mean()
 
                 if self.clip_range_vf is None:
@@ -382,10 +380,12 @@ class SafePPO_GBRL(PPO_GBRL):
                 if isinstance(grads, tuple):
                     theta_grad, values_grad = grads
                     theta, values_params = params
-                    values_grad_maxs.append(values_grad.max().item())
-                    values_grad_mins.append(values_grad.min().item())
-                    values_maxs.append(values_params.max().item())
-                    values_mins.append(values_params.min().item())
+                    if values_grad is not None:
+                        values_grad_maxs.append(values_grad.max().item())
+                        values_grad_mins.append(values_grad.min().item())
+                    if values_params is not None:
+                        values_maxs.append(values_params.max().item())
+                        values_mins.append(values_params.min().item())
                 else:
                     theta_grad = grads
                     theta = params
