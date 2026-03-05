@@ -289,10 +289,8 @@ class SafePPO_GBRL(PPO_GBRL):
                 ratio = th.exp(log_prob - rollout_data.old_log_prob.view(-1))
                 # Per-sample functional gradients
                 g_func = advantages * ratio # this flattens the g
-                cold_start_threshold = e > 0.2 * self.n_epochs
                 use_safety = (
                         self.use_safety_projection
-                        and cold_start_threshold
                         and rollout_data.cost_advantages is not None
                 )
                 if use_safety:

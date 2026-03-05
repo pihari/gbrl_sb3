@@ -99,9 +99,25 @@ class ActorCriticSafePolicy(ActorCriticPolicy):
         observations: Optional[Union[np.ndarray, th.Tensor]] = None,
         cost_value_grad_clip: Optional[float] = None,
     ) -> None:
+        # debug reasons
+        params, grads = self.get_params()
+        if isinstance(grads, tuple):
+            _, value_grad = grads
+        else:
+            value_grad = grads
+        print(f"[cost_critic_step] value_grad is None: {value_grad is None}")
+        if value_grad is not None:
+            print(
+                f"[cost_critic_step] value_grad shape: {value_grad.shape}, max: {value_grad.max().item():.4f}, min: {value_grad.min().item():.4f}")
+        print(f"[cost_critic_step] value_num_trees before step: {self.get_num_trees()}")
+
+        # actual step
         if self.cost_value_model is None:
             return
         self.cost_value_model.step(observations=observations, policy_grad_clip=cost_value_grad_clip)
+
+        # num tree debug
+        print(f"[cost_critic_step] value_num_trees after step: {self.get_num_trees()}")
 
     def update_cost_learning_rate(self, cost_learning_rate: float) -> None:
         if self.cost_value_model is None:
