@@ -116,9 +116,6 @@ class ActorCriticSafePolicy(ActorCriticPolicy):
             return
         self.cost_value_model.step(observations=observations, policy_grad_clip=cost_value_grad_clip)
 
-        # num tree debug
-        print(f"[cost_critic_step] value_num_trees after step: {self.get_num_trees()}")
-
     def update_cost_learning_rate(self, cost_learning_rate: float) -> None:
         if self.cost_value_model is None:
             return
