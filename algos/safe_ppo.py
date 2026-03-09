@@ -359,7 +359,9 @@ class SafePPO_GBRL(PPO_GBRL):
                     break
 
                 # Fit GBRL models on the grads currently in .grad
-                self.policy.step(observations=rollout_data.observations,
+                obs_np = rollout_data.observations.cpu().numpy() if isinstance(rollout_data.observations,
+                                                                               th.Tensor) else rollout_data.observations
+                self.policy.step(observations=obs_np,
                                  policy_grad_clip=self.max_policy_grad_norm,
                                  value_grad_clip=self.max_value_grad_norm)
 

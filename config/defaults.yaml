@@ -33,7 +33,7 @@ params:
   control_variates: False
   split_score_func: "cosine"
   generator_type: "Quantile"
-  shared_tree_struct: True
+  shared_tree_struct: False
   feature_weights: null
 tree_optimizer: 
   policy_optimizer: # PPO / AWR 
@@ -106,7 +106,7 @@ sppo_gbrl:
   normalize_advantage: True
   learning_rate: 3.0e-4
   target_kl: null
-  normalize_value_grads: False
+  normalize_value_grads: True
   batch_size: 128
   n_epochs: 10
   clip_range: 0.2
