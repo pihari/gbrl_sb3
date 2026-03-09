@@ -96,7 +96,7 @@ sppo_gbrl:
   wrapper_kwargs:
     training: True
     norm_obs: False
-    norm_reward: True
+    norm_reward: False
   atari_wrapper_kwargs:
     clip_reward: True
   n_steps: 128

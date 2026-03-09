@@ -304,6 +304,8 @@ class SafePPO_GBRL(PPO_GBRL):
                         lam = th.clamp((inner_F + violation) / bnorm2_F, min=0.0)
                         g_func = g_func - lam * b_func
 
+                    print(f"violation={violation:.3f}, lam={lam:.4f}, b_func_norm={b_func.norm():.4f}")
+
                 # Build policy loss from (projected) per-sample targets
                 policy_loss_1 = g_func
                 policy_loss_2 = advantages * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
