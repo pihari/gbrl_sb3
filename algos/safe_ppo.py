@@ -295,8 +295,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 )
                 if use_safety:
                     b_func = rollout_data.cost_advantages.view(-1) # this flattens the b
-                    exp_ep_cost = float(getattr(self, "current_cost_estimate",
-                                                rollout_data.cost_returns.mean().item()))
+                    exp_ep_cost = rollout_data.cost_returns.mean().item()
                     violation = exp_ep_cost - self.cost_threshold
                     print(f"[cost_check] exp_ep_cost={exp_ep_cost:.3f}, violation={violation:.3f}, threshold={self.cost_threshold}")
                     if violation > 0:
