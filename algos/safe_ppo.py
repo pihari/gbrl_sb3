@@ -297,11 +297,13 @@ class SafePPO_GBRL(PPO_GBRL):
                     b_func = rollout_data.cost_advantages.view(-1) # this flattens the b
                     exp_ep_cost = rollout_data.cost_returns.mean().item()
                     violation = exp_ep_cost - self.cost_threshold
-                    print(f"[cost_check] exp_ep_cost={exp_ep_cost:.3f}, violation={violation:.3f}, threshold={self.cost_threshold}")
+                    #print(f"[cost_check] exp_ep_cost={exp_ep_cost:.3f}, violation={violation:.3f}, threshold={self.cost_threshold}")
                     if violation > 0:
                         inner_F = (g_func * b_func).mean()
                         bnorm2_F = (b_func * b_func).mean() + 1e-10
-                        lam = th.clamp((inner_F + violation) / bnorm2_F, min=0.0)
+                        b_rms = bnorm2_F.sqrt()
+                        # violation scaling with ||b||
+                        lam = th.clamp((inner_F + violation * b_rms) / bnorm2_F, min=0.0)
                         g_func = g_func - lam * b_func
 
                         print(f"violation={violation:.3f}, lam={lam:.4f}, b_func_norm={b_func.norm():.4f}")
