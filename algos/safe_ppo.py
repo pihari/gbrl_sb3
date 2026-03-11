@@ -366,8 +366,9 @@ class SafePPO_GBRL(PPO_GBRL):
                 obs_np = rollout_data.observations.cpu().numpy() if isinstance(rollout_data.observations,
                                                                                th.Tensor) else rollout_data.observations
 
-                max_policy_trees = getattr(self, "max_policy_trees", 25000)
-                if self.policy.actor.get_num_trees() < max_policy_trees:
+                max_trees = 25000
+                max_trees_reached = self.policy.get_num_trees() >= max_trees
+                if not max_trees_reached:
                     self.policy.step(observations=obs_np,
                                      policy_grad_clip=self.max_policy_grad_norm,
                                      value_grad_clip=self.max_value_grad_norm)
@@ -381,8 +382,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 cost_value_loss.backward()
                 cost_value_losses.append(cost_value_loss.item())
 
-                max_value_trees = getattr(self, "max_value_trees", 25000)
-                if self.policy.critic.get_num_trees() < max_value_trees:
+                if not max_trees_reached:
                     self.policy.cost_critic_step(
                         observations=rollout_data.observations,
                         cost_value_grad_clip=self.max_value_grad_norm
