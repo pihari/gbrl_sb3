@@ -372,6 +372,8 @@ class SafePPO_GBRL(PPO_GBRL):
                     self.policy.step(observations=obs_np,
                                      policy_grad_clip=self.max_policy_grad_norm,
                                      value_grad_clip=self.max_value_grad_norm)
+                else:
+                    self.policy.zero_grad()
 
                 # Cost critic: isolated forward → backward → step cycle
                 cost_values_pred = self.policy.predict_cost_values(
