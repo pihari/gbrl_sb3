@@ -271,6 +271,17 @@ class SafePPO_GBRL(PPO_GBRL):
         for e in range(self.n_epochs):
             all_cost_returns = [] # reset per episode needed
             for rollout_data in self.rollout_buffer.get(self.batch_size):
+                # TEMP DEBUG BLOCK
+                r = rollout_data.returns
+                v = rollout_data.old_values
+                print(
+                    f"[DIAG] returns:    mean={r.mean():.3f}  std={r.std():.4f}  min={r.min():.3f}  max={r.max():.3f}")
+                print(
+                    f"[DIAG] old_values: mean={v.mean():.3f}  std={v.std():.4f}  min={v.min():.3f}  max={v.max():.3f}")
+                ev = 1.0 - (r - v).var() / (r.var() + 1e-8)
+                print(f"[DIAG] EV={ev:.6f}  n={r.shape[0]}")
+                break
+
                 actions = rollout_data.actions
                 action_masks = None if not getattr(self, "use_masking", False) else getattr(rollout_data, "action_masks", None)
                 if isinstance(self.action_space, spaces.Discrete):
@@ -576,6 +587,7 @@ class SafePPO_GBRL(PPO_GBRL):
                             self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
                         with th.no_grad():
                             terminal_value = self.policy.predict_values(terminal_obs)[0]  # type: ignore[arg-type]
+
                         rewards[idx] += self.gamma * terminal_value
 
             # Store data in the buffer
