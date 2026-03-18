@@ -386,6 +386,8 @@ class SafePPO_GBRL(PPO_GBRL):
                     self.policy.step(observations=obs_np,
                                      policy_grad_clip=self.max_policy_grad_norm,
                                      value_grad_clip=self.max_value_grad_norm)
+
+                    saved_params = self.policy.model.params
                     reward_values = self.policy.predict_values(
                         rollout_data.observations, requires_grad=True
                     )
@@ -402,6 +404,8 @@ class SafePPO_GBRL(PPO_GBRL):
                         value_grad=value_grad.cpu().numpy(),
                         value_grad_clip=self.max_value_grad_norm
                     )
+
+                    self.policy.model.params = saved_params
                 else:
                     self.policy.zero_grad()
 
