@@ -383,9 +383,10 @@ class SafePPO_GBRL(PPO_GBRL):
                 max_trees_reached = False # self.policy.get_num_trees()[0] >= max_trees
 
                 if not max_trees_reached:
-                    self.policy.step(observations=obs_np,
-                                     policy_grad_clip=self.max_policy_grad_norm,
-                                     value_grad_clip=self.max_value_grad_norm)
+                    self.policy.model.actor_step(
+                        observations=obs_np,
+                        policy_grad_clip=self.max_policy_grad_norm
+                    )
 
                     saved_params = self.policy.model.params
                     reward_values = self.policy.predict_values(
