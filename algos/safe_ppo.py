@@ -272,6 +272,7 @@ class SafePPO_GBRL(PPO_GBRL):
             all_cost_returns = [] # reset per episode needed
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 # TEMP DEBUG BLOCK
+                """
                 r = rollout_data.returns
                 v = rollout_data.old_values
                 print(
@@ -281,6 +282,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 ev = 1.0 - (r - v).var() / (r.var() + 1e-8)
                 print(f"[DIAG] EV={ev:.6f}  n={r.shape[0]}")
                 break
+                """
 
                 actions = rollout_data.actions
                 action_masks = None if not getattr(self, "use_masking", False) else getattr(rollout_data, "action_masks", None)
