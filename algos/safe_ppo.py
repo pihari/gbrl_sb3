@@ -393,8 +393,15 @@ class SafePPO_GBRL(PPO_GBRL):
                     reward_value_pred = reward_values.view_as(rollout_data.returns)
                     reward_value_loss = 0.5 * F.mse_loss(rollout_data.returns, reward_value_pred)
                     reward_value_loss.backward()
+                    n_samples = reward_values.shape[0]
+                    value_grads = reward_values.grad.detach() * n_samples
+                    value_grads = th.clamp(value_grads,
+                                           -self.max_value_grad_norm,
+                                           self.max_value_grad_norm)
+
                     self.policy.model.critic_step(
                         observations=obs_np,
+                        value_grads=value_grads.cpu().numpy(),  # pass explicitly
                         value_grad_clip=self.max_value_grad_norm
                     )
                 else:
