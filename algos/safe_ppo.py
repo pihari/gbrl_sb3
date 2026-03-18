@@ -389,19 +389,17 @@ class SafePPO_GBRL(PPO_GBRL):
                     reward_values = self.policy.predict_values(
                         rollout_data.observations, requires_grad=True
                     )
-                    reward_values.retain_grad()  # ADD THIS — keeps .grad on non-leaf tensor
+                    reward_values.retain_grad()
                     reward_value_pred = reward_values.view_as(rollout_data.returns)
                     reward_value_loss = 0.5 * F.mse_loss(rollout_data.returns, reward_value_pred)
                     reward_value_loss.backward()
+
                     n_samples = reward_values.shape[0]
-                    value_grads = reward_values.grad.detach() * n_samples
-                    value_grads = th.clamp(value_grads,
-                                           -self.max_value_grad_norm,
-                                           self.max_value_grad_norm)
+                    value_grad = reward_values.grad.detach() * n_samples
 
                     self.policy.model.critic_step(
                         observations=obs_np,
-                        value_grads=value_grads.cpu().numpy(),  # pass explicitly
+                        value_grad=value_grad.cpu().numpy(),
                         value_grad_clip=self.max_value_grad_norm
                     )
                 else:
