@@ -477,7 +477,7 @@ class SafePPO_GBRL(PPO_GBRL):
 
             # Dual ascent update
             laglam_cap = 2.0
-            self.lag_lambda = max(0.0, min(self.lag_lambda + self.lagrangian_lr * violation, laglam_cap))
+            self.lag_lambda = max(0.0, min(self.lag_lambda + self.lag_lr * violation, laglam_cap))
 
             # Log it
             self.logger.record("train/lag_lambda", self.lag_lambda)
