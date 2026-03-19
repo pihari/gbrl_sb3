@@ -202,9 +202,12 @@ class SafePPO_GBRL(PPO_GBRL):
 
     def __init__(self, *args, **kwargs):
         self.cost_threshold: float = float(kwargs.pop("cost_threshold", 25.0)) # https://arxiv.org/html/2409.01245v1
-        self.use_safety_projection: bool = bool(kwargs.pop("use_safety_projection", True))
+        self.use_safety_projection: bool = bool(kwargs.pop("use_safety_projection", False))
+        self.use_lagrangian_rlx: bool = not self.use_safety_projection
         self.cost_value_source = kwargs.pop("cost_value_source", None)
         self.cost_vf_coef = 0.5  # could be its own input arg with float(kwargs.pop("cost_vf_coef", 0.5))
+        self.lag_lr = 0.05
+        self.lag_lambda = 0.0
 
         # delay setup
         kwargs["_init_setup_model"] = False
@@ -303,23 +306,30 @@ class SafePPO_GBRL(PPO_GBRL):
                 # Per-sample functional gradients
                 g_func = advantages * ratio # this flattens the g
                 use_safety = (
-                        self.use_safety_projection
+                        (self.use_safety_projection or self.use_lagrangian_rlx)
                         and rollout_data.cost_advantages is not None
                 )
                 if use_safety:
-                    b_func = rollout_data.cost_advantages.view(-1) # this flattens the b
-                    exp_ep_cost = rollout_data.cost_returns.mean().item()
-                    violation = exp_ep_cost - self.cost_threshold
-                    #print(f"[cost_check] exp_ep_cost={exp_ep_cost:.3f}, violation={violation:.3f}, threshold={self.cost_threshold}")
-                    if violation > 0:
-                        inner_F = (g_func * b_func).mean()
-                        bnorm2_F = (b_func * b_func).mean() + 1e-10
-                        b_rms = bnorm2_F.sqrt()
-                        # violation scaling with ||b||
-                        lam = th.clamp((inner_F + violation * b_rms) / bnorm2_F, min=0.0)
-                        g_func = g_func - lam * b_func
+                    if self.use_safety_projection:
+                        b_func = rollout_data.cost_advantages.view(-1) # this flattens the b
+                        exp_ep_cost = rollout_data.cost_returns.mean().item()
+                        violation = exp_ep_cost - self.cost_threshold
+                        #print(f"[cost_check] exp_ep_cost={exp_ep_cost:.3f}, violation={violation:.3f}, threshold={self.cost_threshold}")
+                        if violation > 0:
+                            inner_F = (g_func * b_func).mean()
+                            bnorm2_F = (b_func * b_func).mean() + 1e-10
+                            b_rms = bnorm2_F.sqrt()
+                            # violation scaling with ||b||
+                            lam = th.clamp((inner_F + violation * b_rms) / bnorm2_F, min=0.0)
+                            g_func = g_func - lam * b_func
 
-                        print(f"violation={violation:.3f}, lam={lam:.4f}, b_func_norm={b_func.norm():.4f}")
+                            #print(f"violation={violation:.3f}, lam={lam:.4f}, b_func_norm={b_func.norm():.4f}")
+
+                    else:
+                        cost_advantages = rollout_data.cost_advantages.view(-1)
+                        cost_penalty = self.lag_lambda * cost_advantages * ratio.detach()
+                        g_func = g_func - cost_penalty
+
 
                 # Build policy loss from (projected) per-sample targets
                 policy_loss_1 = g_func
@@ -459,6 +469,17 @@ class SafePPO_GBRL(PPO_GBRL):
 
             if not continue_training:
                 break
+
+        if self.use_lagrangian_rlx:
+            # Compute mean episode cost over the rollout buffer
+            exp_ep_cost = self.rollout_buffer.cost_returns.mean().item()
+            violation = exp_ep_cost - self.cost_threshold
+
+            # Dual ascent update
+            self.lag_lambda = max(0.0, self.lag_lambda + self.lagrangian_lr * violation)
+
+            # Log it
+            self.logger.record("train/lag_lambda", self.lag_lambda)
 
         # Aggregate logs
         if len(theta_maxs) > 0:
