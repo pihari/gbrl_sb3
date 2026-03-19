@@ -206,7 +206,7 @@ class SafePPO_GBRL(PPO_GBRL):
         self.use_lagrangian_rlx: bool = not self.use_safety_projection
         self.cost_value_source = kwargs.pop("cost_value_source", None)
         self.cost_vf_coef = 0.5  # could be its own input arg with float(kwargs.pop("cost_vf_coef", 0.5))
-        self.lag_lr = 0.05
+        self.lag_lr = 0.001
         self.lag_lambda = 0.0
 
         # delay setup
@@ -476,7 +476,8 @@ class SafePPO_GBRL(PPO_GBRL):
             violation = exp_ep_cost - self.cost_threshold
 
             # Dual ascent update
-            self.lag_lambda = max(0.0, self.lag_lambda + self.lag_lr * violation)
+            laglam_cap = 2.0
+            self.lag_lambda = max(0.0, min(self.lag_lambda + self.lagrangian_lr * violation, laglam_cap))
 
             # Log it
             self.logger.record("train/lag_lambda", self.lag_lambda)
