@@ -380,7 +380,7 @@ class SafePPO_GBRL(PPO_GBRL):
                                                                                th.Tensor) else rollout_data.observations
 
                 max_trees = 25000
-                max_trees_reached = False # self.policy.get_num_trees()[0] >= max_trees
+                max_trees_reached = self.policy.get_num_trees()[0] >= max_trees
 
                 if not max_trees_reached:
                     self.policy.model.actor_step(
