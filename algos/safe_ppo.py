@@ -476,7 +476,7 @@ class SafePPO_GBRL(PPO_GBRL):
             violation = exp_ep_cost - self.cost_threshold
 
             # Dual ascent update
-            self.lag_lambda = max(0.0, self.lag_lambda + self.lagrangian_lr * violation)
+            self.lag_lambda = max(0.0, self.lag_lambda + self.lag_lr * violation)
 
             # Log it
             self.logger.record("train/lag_lambda", self.lag_lambda)
