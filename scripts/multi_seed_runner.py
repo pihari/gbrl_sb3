@@ -180,17 +180,20 @@ def main():
     config = {
         "num_envs": 16,
         "n_steps": 512,
-        "batch_size": 256,
+        "batch_size": 512,
         "n_epochs": 20,
-        "gamma": 0.999,
+        "gamma": 0.99,
         "gae_lambda": 0.98,
         "clip_range": 0.2,
-        "ent_coef": 0.0033,
+        "ent_coef": 0.03,
         "policy_lr": 0.031,
         "value_lr": 0.05,
         "cost_value_lr": 0.05,
         "cost_threshold": 25.0,
         "max_trees": 25000,
+        "grow_policy": "oblovious",
+        "max_policy_grad_norm": 150,
+        "max_value_grad_norm": 10,
     }
 
     # Save config
