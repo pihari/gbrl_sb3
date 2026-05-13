@@ -4,6 +4,12 @@ import json
 import numpy as np
 from datetime import datetime
 
+import sys
+from pathlib import Path
+
+ROOT_PATH = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT_PATH))
+
 
 def make_env(env_name, seed):
     """Create a Safety-Gymnasium environment."""
