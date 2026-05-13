@@ -85,10 +85,13 @@ def run_single_seed(args, seed, log_dir):
     )
 
     # Save final model
-    model.save(os.path.join(seed_dir, f"final_model_seed_{seed}"))
+    try:
+        model.save(os.path.join(seed_dir, f"final_model_seed_{seed}"))
+        print(f"[Seed {seed}] Complete. Saved to {seed_dir}")
+    except Exception as e:
+        print(f"[Seed {seed}] Could not save model: {e}")
     env.close()
 
-    print(f"[Seed {seed}] Complete. Saved to {seed_dir}")
     return seed_dir
 
 
