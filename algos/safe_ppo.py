@@ -9,6 +9,7 @@ from stable_baselines3.common.buffers import RolloutBuffer, RolloutBufferSamples
 from stable_baselines3.common.utils import obs_as_tensor, update_learning_rate
 from stable_baselines3.common.vec_env import VecEnv
 from typing import NamedTuple
+import math
 
 from algos.ppo import PPO_GBRL
 from buffers.rollout_buffer import CategoricalRolloutBuffer, MaskableRolloutBuffer
@@ -230,6 +231,10 @@ class SafePPO_GBRL(PPO_GBRL):
 
         if not hasattr(self, "current_cost_estimate"):
             self.current_cost_estimate = 0.0
+        # --- Diagnostic storage for empirical bound validation ---
+        self.projection_log = []
+        self.prev_returns_per_state = None
+        self.projection_was_active_prev = False
 
     def train(self) -> None:
         """
@@ -316,6 +321,8 @@ class SafePPO_GBRL(PPO_GBRL):
                         violation = exp_ep_cost - self.cost_threshold
                         #print(f"[cost_check] exp_ep_cost={exp_ep_cost:.3f}, violation={violation:.3f}, threshold={self.cost_threshold}")
                         if violation > 0:
+                            g_func_original = g_func.detach().clone()
+
                             inner_F = (g_func * b_func).mean()
                             bnorm2_F = (b_func * b_func).mean() + 1e-10
                             b_rms = bnorm2_F.sqrt()
@@ -323,7 +330,58 @@ class SafePPO_GBRL(PPO_GBRL):
                             lam = th.clamp((inner_F + violation * b_rms) / bnorm2_F, min=0.0)
                             g_func = g_func - lam * b_func
 
-                            #print(f"violation={violation:.3f}, lam={lam:.4f}, b_func_norm={b_func.norm():.4f}")
+                            # Diagnostics
+                            with th.no_grad():
+                                g_norm = g_func_original.norm().item()
+                                b_norm = b_func.norm().item()
+                                g_safe_norm = g_func.norm().item()
+
+                                # phi: angle between reward and cost gradients
+                                if g_norm > 1e-10 and b_norm > 1e-10:
+                                    cos_phi = (g_func_original * b_func).sum().item() / (g_norm * b_norm)
+                                    cos_phi = max(-1.0, min(1.0, cos_phi))
+                                    phi = math.acos(cos_phi)
+                                else:
+                                    phi = 0.0
+
+                                # rho: dimensionless projection strength
+                                rho = lam.item() * b_norm / (g_norm + 1e-10)
+
+                                # alpha_predicted from Lemma (Gradient Rotation)
+                                cos_phi_val = math.cos(phi)
+                                num = 1.0 - rho * cos_phi_val
+                                den = math.sqrt(max(1e-20, 1.0 - 2.0 * rho * cos_phi_val + rho ** 2))
+                                cos_alpha_pred = max(-1.0, min(1.0, num / den))
+                                alpha_predicted = math.acos(cos_alpha_pred)
+
+                                # alpha_observed: actual rotation
+                                if g_norm > 1e-10 and g_safe_norm > 1e-10:
+                                    cos_alpha_obs = (g_func_original * g_func).sum().item() / (g_norm * g_safe_norm)
+                                    cos_alpha_obs = max(-1.0, min(1.0, cos_alpha_obs))
+                                    alpha_observed = math.acos(cos_alpha_obs)
+                                else:
+                                    alpha_observed = 0.0
+
+                                self.projection_log.append({
+                                    "phi": phi,
+                                    "alpha_predicted": alpha_predicted,
+                                    "alpha_observed": alpha_observed,
+                                    "rho": rho,
+                                    "lambda_star": lam.item(),
+                                    "violation": violation,
+                                    "b_rms": b_rms.item(),
+                                    "g_norm": g_norm,
+                                    "b_norm": b_norm,
+                                    "inner_F": inner_F.item(),
+                                })
+                        else:
+                            self.projection_log.append({
+                                "phi": 0.0, "alpha_predicted": 0.0,
+                                "alpha_observed": 0.0, "rho": 0.0,
+                                "lambda_star": 0.0, "violation": violation,
+                                "b_rms": 0.0, "g_norm": 0.0, "b_norm": 0.0,
+                                "inner_F": 0.0,
+                            })
 
                     else:
                         cost_advantages = rollout_data.cost_advantages.view(-1)
@@ -489,6 +547,63 @@ class SafePPO_GBRL(PPO_GBRL):
             try:
                 ev = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
                 self.logger.record("train/explained_variance", ev)
+            except Exception:
+                ev = 0.0
+
+            active_projs = [d for d in self.projection_log[-100:]
+                            if d.get("lambda_star", 0) > 0]
+            if active_projs:
+                self.logger.record("safety/phi_deg_mean",
+                                   np.mean([math.degrees(d["phi"]) for d in active_projs]))
+                self.logger.record("safety/alpha_predicted_mean",
+                                   np.mean([math.degrees(d["alpha_predicted"]) for d in active_projs]))
+                self.logger.record("safety/alpha_observed_mean",
+                                   np.mean([math.degrees(d["alpha_observed"]) for d in active_projs]))
+                self.logger.record("safety/rho_mean",
+                                   np.mean([d["rho"] for d in active_projs]))
+                self.logger.record("safety/lambda_star_mean",
+                                   np.mean([d["lambda_star"] for d in active_projs]))
+                self.logger.record("safety/b_rms_mean",
+                                   np.mean([d["b_rms"] for d in active_projs]))
+                self.logger.record("safety/violation_mean",
+                                   np.mean([d["violation"] for d in active_projs]))
+
+                # Lemma validation: mean absolute error between predicted and observed alpha
+                alpha_errors = [abs(d["alpha_predicted"] - d["alpha_observed"])
+                                for d in active_projs]
+                self.logger.record("safety/alpha_mae_deg",
+                                   np.mean([math.degrees(e) for e in alpha_errors]))
+
+            self.logger.record("safety/projection_active_frac",
+                               len(active_projs) / max(1, len(self.projection_log[-100:])))
+
+            # --- EV bound validation ---
+            try:
+                current_returns = self.rollout_buffer.returns.flatten()
+                current_values = self.rollout_buffer.values.flatten()
+                var_R2 = np.var(current_returns)
+
+                if self.prev_returns_per_state is not None and var_R2 > 1e-10:
+                    min_len = min(len(current_returns), len(self.prev_returns_per_state))
+                    delta = current_returns[:min_len] - self.prev_returns_per_state[:min_len]
+                    var_delta = np.var(delta)
+                    ev_upper_bound = 1.0 - var_delta / var_R2
+
+                    self.logger.record("ev_bound/var_delta", float(var_delta))
+                    self.logger.record("ev_bound/var_R2", float(var_R2))
+                    self.logger.record("ev_bound/ev_upper_bound", float(ev_upper_bound))
+                    self.logger.record("ev_bound/ev_actual", float(ev))
+                    self.logger.record("ev_bound/bound_slack", float(ev_upper_bound - ev))
+
+                    # Track regime switches
+                    proj_active_now = len(active_projs) > 0
+                    if proj_active_now != self.projection_was_active_prev:
+                        self.logger.record("ev_bound/regime_switch", 1.0)
+                    else:
+                        self.logger.record("ev_bound/regime_switch", 0.0)
+                    self.projection_was_active_prev = proj_active_now
+
+                self.prev_returns_per_state = current_returns.copy()
             except Exception:
                 pass
 
