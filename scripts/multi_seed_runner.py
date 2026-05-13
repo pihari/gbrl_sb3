@@ -27,7 +27,7 @@ def make_env(env_name, seed):
 def run_single_seed(env_name, seed, total_steps, log_dir, config):
     """Run one training seed and return the log directory."""
     import gymnasium as gym
-    from stable_baselines3.common.vec_env import SubprocVecEnv
+    from stable_baselines3.common.vec_env import DummyVecEnv
     from stable_baselines3.common.logger import configure
     from algos.safe_ppo import SafePPO_GBRL
 
@@ -36,7 +36,7 @@ def run_single_seed(env_name, seed, total_steps, log_dir, config):
 
     # Create vectorised environment
     num_envs = config.get("num_envs", 16)
-    env = SubprocVecEnv([make_env(env_name, seed + i) for i in range(num_envs)])
+    env = DummyVecEnv([make_env(env_name, seed + i) for i in range(num_envs)])
 
     # Model with corrected configuration (all four requirements)
     tree_optimizer = {
