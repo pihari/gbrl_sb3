@@ -78,7 +78,13 @@ def extract_experiment(log_dir, label):
             if metric in seed_data:
                 vals = seed_data[metric]["values"]
                 # Filter out NaN/Inf
-                clean = [v for v in vals if v is not None and np.isfinite(v)]
+                clean = []
+                for v in vals:
+                    try:
+                        if v is not None and np.isscalar(v) and np.isfinite(v):
+                            clean.append(float(v))
+                    except (TypeError, ValueError):
+                        pass
                 if clean:
                     per_seed_means.append(np.mean(clean))
                     per_seed_finals.append(clean[-1])
