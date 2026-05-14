@@ -7,7 +7,6 @@ import numpy as np
 try:
     from tbparse import SummaryReader
 except ImportError:
-    print("Install tbparse: pip install tbparse --break-system-packages")
     exit(1)
 
 
@@ -162,8 +161,6 @@ def main():
             else:
                 print(f"  {'--':<20}", end="")
         print()
-
-    print(f"\nUpload {args.output} to Claude for paper revision.")
 
 
 if __name__ == "__main__":
