@@ -202,7 +202,7 @@ class SafePPO_GBRL(PPO_GBRL):
     """
 
     def __init__(self, *args, **kwargs):
-        self.cost_threshold: float = float(kwargs.pop("cost_threshold", 25.0)) # https://arxiv.org/html/2409.01245v1
+        self.cost_threshold: float = float(kwargs.pop("cost_threshold", 100.0)) # https://arxiv.org/html/2409.01245v1
         self.use_safety_projection: bool = bool(kwargs.pop("use_safety_projection", True))
         self.use_lagrangian_rlx: bool = not self.use_safety_projection
         self.cost_value_source = kwargs.pop("cost_value_source", None)
