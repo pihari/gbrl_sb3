@@ -421,8 +421,11 @@ class SafePPO_GBRL(PPO_GBRL):
                 policy_losses.append(policy_loss.item())
                 value_losses.append(value_loss.item())
 
+                max_trees = 25000
+                max_trees_reached = self.policy.get_num_trees()[0] >= max_trees
+
                 # Optional Gaussian log_std optimization (guarded)
-                if isinstance(self.policy.action_dist, DiagGaussianDistribution) and not self.fixed_std:
+                if isinstance(self.policy.action_dist, DiagGaussianDistribution) and not self.fixed_std and not max_trees_reached:
                     if self.max_policy_grad_norm is not None and self.max_policy_grad_norm > 0.0:
                         th.nn.utils.clip_grad_norm_(self.policy.log_std, max_norm=self.max_policy_grad_norm,
                                                     error_if_nonfinite=True)
@@ -446,9 +449,6 @@ class SafePPO_GBRL(PPO_GBRL):
                 # Fit GBRL models on the grads currently in .grad
                 obs_np = rollout_data.observations.cpu().numpy() if isinstance(rollout_data.observations,
                                                                                th.Tensor) else rollout_data.observations
-
-                max_trees = 25000
-                max_trees_reached = self.policy.get_num_trees()[0] >= max_trees
 
                 if not max_trees_reached:
                     self.policy.model.actor_step(
