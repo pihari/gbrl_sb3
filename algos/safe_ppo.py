@@ -202,7 +202,7 @@ class SafePPO_GBRL(PPO_GBRL):
     """
 
     def __init__(self, *args, **kwargs):
-        self.cost_threshold: float = float(kwargs.pop("cost_threshold", 150.0)) # https://arxiv.org/html/2409.01245v1
+        self.cost_threshold: float = float(kwargs.pop("cost_threshold", 50.0)) # https://arxiv.org/html/2409.01245v1
         self.use_safety_projection: bool = bool(kwargs.pop("use_safety_projection", True))
         self.use_lagrangian_rlx: bool = not self.use_safety_projection
         self.cost_value_source = kwargs.pop("cost_value_source", None)
@@ -327,7 +327,7 @@ class SafePPO_GBRL(PPO_GBRL):
                             bnorm2_F = (b_func * b_func).mean() + 1e-10
                             b_rms = bnorm2_F.sqrt()
                             # violation scaling with ||b||
-                            lam = th.clamp((inner_F + violation * b_rms) / bnorm2_F, min=0.0)
+                            lam = th.clamp((inner_F + violation * b_rms) / bnorm2_F, min=0.0, max=1.0)
                             g_func = g_func - lam * b_func
 
                             # Diagnostics
