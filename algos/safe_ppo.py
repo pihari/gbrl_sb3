@@ -209,6 +209,7 @@ class SafePPO_GBRL(PPO_GBRL):
         self.cost_vf_coef = 0.5  # could be its own input arg with float(kwargs.pop("cost_vf_coef", 0.5))
         self.lag_lr = 0.001
         self.lag_lambda = 0.0
+        self.undiscounted_ep_costs = 0.0
 
         # delay setup
         kwargs["_init_setup_model"] = False
@@ -317,8 +318,7 @@ class SafePPO_GBRL(PPO_GBRL):
                 if use_safety:
                     if self.use_safety_projection:
                         b_func = rollout_data.cost_advantages.view(-1) # this flattens the b
-                        exp_ep_cost = getattr(self, 'undiscounted_ep_cost', rollout_data.cost_returns.mean().item()) #rollout_data.cost_returns.mean().item()
-                        violation = exp_ep_cost - self.cost_threshold
+                        violation = self.undiscounted_ep_costs - self.cost_threshold
                         #print(f"[cost_check] exp_ep_cost={exp_ep_cost:.3f}, violation={violation:.3f}, threshold={self.cost_threshold}")
                         if violation > 0:
                             g_func_original = g_func.detach().clone()
@@ -673,6 +673,7 @@ class SafePPO_GBRL(PPO_GBRL):
         rollout_buffer.reset()
         episode_costs = np.zeros(env.num_envs)
         episode_rewards = np.zeros(env.num_envs)
+        all_completed_costs_ro = []
 
         n_steps = 0
         callback.on_rollout_start()
@@ -761,6 +762,7 @@ class SafePPO_GBRL(PPO_GBRL):
             self._last_episode_starts = dones
 
             if completed_costs:
+                all_completed_costs_ro.extend(completed_costs)
                 self.logger.record("rollout/ep_cost_mean", np.mean(completed_costs))
                 self.logger.record("rollout/ep_rew_mean", np.mean(completed_rewards))
                 self.logger.record("rollout/constraint_violation_count", violations)
@@ -774,6 +776,9 @@ class SafePPO_GBRL(PPO_GBRL):
             last_values = self.policy.predict_values(obs_tensor, requires_grad=False)
             last_cost_values = self.policy.predict_cost_values(obs_tensor, requires_grad=False)
 
+        # rolling avg ep costs
+        if all_completed_costs_ro:
+            self.undiscounted_ep_costs = np.mean(all_completed_costs_ro)
         rollout_buffer.compute_returns_and_advantage(
             last_values=last_values,
             last_cost_values=last_cost_values,
