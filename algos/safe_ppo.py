@@ -530,8 +530,7 @@ class SafePPO_GBRL(PPO_GBRL):
 
         if self.use_lagrangian_rlx:
             # Compute mean episode cost over the rollout buffer
-            exp_ep_cost = self.rollout_buffer.cost_returns.mean().item()
-            violation = exp_ep_cost - self.cost_threshold
+            violation =  self.undiscounted_ep_costs - self.cost_threshold
 
             # Dual ascent update
             laglam_cap = 2.0
